@@ -1,0 +1,89 @@
+// Package catalog renders a deterministic offline project catalog.
+package catalog
+
+import (
+	"bytes"
+	"fmt"
+	"html/template"
+	"path/filepath"
+
+	"park/internal/project"
+	"park/internal/samples"
+)
+
+const MaxBytes = 32 << 20
+
+type limitedBuffer struct{ bytes.Buffer }
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	if b.Len()+len(p) > MaxBytes {
+		return 0, fmt.Errorf("catalog exceeds %d bytes", MaxBytes)
+	}
+	return b.Buffer.Write(p)
+}
+
+func (b *limitedBuffer) WriteString(s string) (int, error) { return b.Write([]byte(s)) }
+
+type Row struct{ Input, Output string }
+type Function struct {
+	Anchor, Name, Signature, Description, State, Source, InputLabel, OutputLabel string
+	Count, Omitted                                                               int
+	Rows                                                                         []Row
+}
+type Process struct {
+	Name, Description string
+	Uses              []string
+	Functions         []Function
+}
+type Page struct {
+	Revision  string
+	Processes []Process
+}
+
+// Selection returns list positions for the first two and last two, without overlap.
+func Selection(count int) []int {
+	out := []int{}
+	for i := 0; i < count; i++ {
+		if i < 2 || i >= count-2 {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+func Render(p *project.Project) ([]byte, error) {
+	page := Page{Revision: p.Revision}
+	for _, name := range project.Names(p.Processes) {
+		proc := p.Processes[name]
+		view := Process{Name: name, Description: proc.Description, Uses: proc.Uses}
+		for _, name := range project.Names(proc.Functions) {
+			f := proc.Functions[name]
+			item := Function{Anchor: proc.Name + "." + name, Name: name, Signature: f.Signature, Description: f.Description, State: f.State(), Count: len(f.Examples), InputLabel: f.InputLabel, OutputLabel: f.OutputLabel}
+			if f.Implementation != "" {
+				item.Source = filepath.Clean(filepath.Join(filepath.Dir(proc.ManifestPath), proc.Module))
+			}
+			for _, i := range Selection(len(f.Examples)) {
+				pair := f.Examples[i]
+				item.Rows = append(item.Rows, Row{Input: samples.Key(pair.Input), Output: samples.Key(pair.Output)})
+			}
+			item.Omitted = item.Count - len(item.Rows)
+			view.Functions = append(view.Functions, item)
+		}
+		page.Processes = append(page.Processes, view)
+	}
+	var b limitedBuffer
+	err := pageTemplate.Execute(&b, page)
+	return b.Bytes(), err
+}
+
+var pageTemplate = template.Must(template.New("catalog").Parse(`<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Park catalog</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;max-width:960px;margin:40px auto;padding:0 24px;color:#25332c;background:#f7f8f4}a{color:#286444}code,pre{font:14px/1.5 ui-monospace,monospace}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf0e9;padding:12px;border-radius:6px}article{margin:24px 0;padding:16px 24px;background:white;border:1px solid #dce3d8;border-radius:10px}.meta{color:#596559}footer{margin:40px 0;font-size:12px;overflow-wrap:anywhere}h2{margin-top:40px}</style></head>
+<body><header><h1>Park</h1><p>Processes, functions, and authored input/output examples.</p></header>
+<nav aria-label="Processes"><ul>{{range .Processes}}<li><a href="#{{.Name}}">{{.Name}}</a><ul>{{range .Functions}}<li><a href="#{{.Anchor}}">{{.Signature}}</a></li>{{end}}</ul></li>{{else}}<li>No processes registered.</li>{{end}}</ul></nav>
+<main>{{range .Processes}}<section id="{{.Name}}"><h2>{{.Name}}</h2><p>{{.Description}}</p>{{if .Uses}}<p>Uses: {{range .Uses}}<a href="#{{.}}">{{.}}</a> {{end}}</p>{{end}}
+{{range .Functions}}{{$fn := .}}<article id="{{.Anchor}}"><h3><code>{{.Signature}}</code></h3><p>{{.Description}}</p><p class="meta">{{.State}} · {{.Count}} authored examples{{if .Source}} · <code>{{.Source}}</code>{{end}}</p>
+{{range .Rows}}<div><pre>{{$fn.InputLabel}}: {{.Input}}
+{{$fn.OutputLabel}}: {{.Output}}</pre></div>{{else}}<p>No authored examples.</p>{{end}}
+{{if .Omitted}}<p class="meta">{{.Omitted}} examples omitted; showing first two and last two.</p>{{end}}</article>{{end}}</section>{{end}}</main>
+<footer>Project revision: <code>{{.Revision}}</code></footer></body></html>
+`))

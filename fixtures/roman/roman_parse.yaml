@@ -1,0 +1,17 @@
+version: 1
+name: RomanParse
+description: Convert lowercase Roman numerals using i, v, and x.
+module: roman_parse.star
+uses: []
+functions:
+  - function: parse(in) out
+    description: Parse a lowercase Roman numeral.
+    implementation: parse
+    examples:
+      - {in: "ix", out: 9}
+      - {in: "vi", out: 6}
+  - function: tokenize(tx) res
+    description: An example-only token vocabulary for teaching calls.
+    examples:
+      - {tx: "ix + vi", res: ["ix", "+", "vi"]}
+      - {tx: "vi + ix", res: ["vi", "+", "ix"]}
