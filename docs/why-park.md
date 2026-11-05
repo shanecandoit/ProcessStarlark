@@ -26,8 +26,8 @@ Park starts from the known cases and keeps them central as code is added.
    example table forever. Once it has a body, the body won't run until the
    function has at least two distinct examples.
 3. **Unknown inputs become new examples.** When nothing answers a call, Park
-   reports it instead of guessing. With `--interactive`, you supply the answer
-   and Park saves it as a new example.
+   reports it instead of guessing and queues it as a question. You answer it
+   with a new example or with code.
 4. **Everything is pure and deterministic.** Functions have no filesystem,
    network, clock, environment, or randomness. Results are reproducible and safe
    to cache, and `park test` can check every example.

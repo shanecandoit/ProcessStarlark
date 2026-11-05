@@ -27,8 +27,8 @@ For each call, the runtime:
 2. Otherwise checks `.cache/` for the current project revision.
 3. Otherwise executes the implementation, if it's present and ready, and caches
    a successful output.
-4. Otherwise reports an unresolved call. With `--interactive` and a terminal,
-   Park prompts for the answer and saves it as a new example.
+4. Otherwise reports an unresolved call and adds it to the question queue
+   (see below).
 
 Computed results never count toward readiness. Execution has no filesystem,
 network, clock, environment, or randomness APIs.
@@ -46,7 +46,6 @@ A project is a flat directory of `.star` modules:
 roman_parse.star    # Process RomanParse: code and examples
 roman_add.star      # Process RomanAdd
 .cache/             # Disposable computed results (canonical JSON); safe to delete
-.park/              # CLI lock and interrupted-edit recovery state
 park.html           # Generated offline catalog
 ```
 
@@ -174,7 +173,7 @@ park list
 ```text
 init [DIR]                        Create an empty project and catalog
 list                              List processes and function readiness
-run 'P.fn(args)'                  Run a call (optional --interactive)
+run 'P.fn(args)'                  Run a call; unanswered calls go to questions.txt
 example add 'P.fn(args) == value' Add an example to the function's module
 example remove 'P.fn(args)'       Remove an example wherever it is written
 test [P.fn]                       Check examples against implementations
@@ -188,15 +187,37 @@ build                             Validate and regenerate park.html
   that module's last example. `example remove` deletes the example wherever it
   is written.
 - Flags come before positional operands. Run `park COMMAND --help` for flags.
-- Normal runs never prompt. Pass `--interactive` to answer unresolved calls;
-  the answer is a literal and is saved as with `example add`.
 - `build` and the `example` commands regenerate `park.html` when they succeed.
   After editing `.star` files by hand, run `park build`. Runtime cache writes
   don't touch the catalog.
 - The catalog shows each function's signature, its readiness, and its first two
   and last two examples, without duplicates. Examples from a function's own
   module come first.
-- Keep `.park/` until an interrupted edit has been recovered with `park build`.
+- If an edit is interrupted after saving a module, `park build` regenerates the
+  catalog. Modules are the source of truth.
+
+## Questions
+
+When Park can't answer a call, because it has no example and no code, it asks
+you instead of guessing:
+
+```text
+$ park run 'Shipping.quote("JP", 800)'
+park: no answer for Zones.zone(country="JP"); added to questions.txt
+Answer it with an example:
+  park example add 'Zones.zone("JP") == ...'
+or implement Zones.zone.
+```
+
+- The question is about the call Park couldn't answer, which may be inside a
+  dependency, as here. `park test` queues its misses too.
+- Open questions are listed in `questions.txt`, at the top of `park list`, and
+  at the top of `park.html`.
+- Answer a question by adding an example for that call, or by implementing the
+  function. Answered questions are removed automatically, and the file is
+  deleted when the queue is empty.
+- Park never reads from the terminal; answering is always a separate command
+  or a source edit.
 
 Exit codes: `0` success, `1` evaluation or test failure, `2` usage or project
 validation error, `3` unresolved call.

@@ -4,12 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"park/internal/project"
 )
@@ -39,16 +37,16 @@ func fixture(t *testing.T) string {
 	}
 	return root
 }
-func invoke(t *testing.T, root string, terminal bool, input string, args ...string) (int, string, string) {
+func invoke(t *testing.T, root string, args ...string) (int, string, string) {
 	t.Helper()
 	var out, err bytes.Buffer
-	c := &CLI{In: strings.NewReader(input), Out: &out, Err: &err, Terminal: terminal}
+	c := &CLI{Out: &out, Err: &err}
 	code := c.Run(context.Background(), append([]string{"--root", root}, args...))
 	return code, out.String(), err.String()
 }
 func success(t *testing.T, root string, args ...string) string {
 	t.Helper()
-	code, out, err := invoke(t, root, false, "", args...)
+	code, out, err := invoke(t, root, args...)
 	if code != 0 {
 		t.Fatalf("%v => %d: %s", args, code, err)
 	}
@@ -82,12 +80,12 @@ func TestDefaultRootStaysInCurrentDirectory(t *testing.T) {
 	}
 	t.Chdir(child)
 	var out, errout bytes.Buffer
-	c := &CLI{In: strings.NewReader(""), Out: &out, Err: &errout}
+	c := &CLI{Out: &out, Err: &errout}
 	if code := c.Run(context.Background(), []string{"test"}); code != 2 || !strings.Contains(errout.String(), "no Park project found in current directory") {
 		t.Fatalf("expected local project error, got %d: %s", code, errout.String())
 	}
-	if _, err := os.Stat(filepath.Join(parent, ".park")); !os.IsNotExist(err) {
-		t.Fatalf("default discovery touched parent project state: %v", err)
+	if _, err := os.Stat(filepath.Join(parent, "park.html")); !os.IsNotExist(err) {
+		t.Fatalf("default discovery touched the parent project: %v", err)
 	}
 	// A parent project is accessible when explicitly selected.
 	success(t, parent, "test")
@@ -139,7 +137,7 @@ func TestRunCacheAndBodyVerification(t *testing.T) {
 	}
 	source := read(t, root, "roman_parse.star")
 	write(t, root, "roman_parse.star", strings.Replace(source, "        return value", "        value = 0\n        return value", 1))
-	code, _, err := invoke(t, root, false, "", "test", "RomanParse.parse")
+	code, _, err := invoke(t, root, "test", "RomanParse.parse")
 	if code != 1 || !strings.Contains(err, "expected 9") || !strings.Contains(err, "roman_parse.star:4") {
 		t.Fatalf("bad body escaped test: %d %s", code, err)
 	}
@@ -148,23 +146,33 @@ func TestRunCacheAndBodyVerification(t *testing.T) {
 	}
 }
 
-func TestTeachingAndExampleEdits(t *testing.T) {
+func TestUnansweredCallsBecomeQuestions(t *testing.T) {
 	root := fixture(t)
 	success(t, root, "build")
-	code, out, err := invoke(t, root, false, `["iv", "+", "i"]`+"\n", "run", "--interactive", `RomanParse.tokenize("iv + i")`)
-	if code != 3 || out != "" || !strings.Contains(err, `unresolved call RomanParse.tokenize(text="iv + i")`) {
-		t.Fatalf("unattended call %d %s %s", code, out, err)
+	for range 2 { // asking twice queues the question once
+		code, out, err := invoke(t, root, "run", `RomanParse.tokenize("iv + i")`)
+		if code != 3 || out != "" || !strings.Contains(err, `no answer for RomanParse.tokenize(text="iv + i")`) || !strings.Contains(err, `park example add 'RomanParse.tokenize("iv + i") == ...'`) {
+			t.Fatalf("unanswered call %d %q %q", code, out, err)
+		}
 	}
-	code, out, err = invoke(t, root, true, `["iv", "+", "i"]`+"\n", "run", "--interactive", `RomanParse.tokenize("iv + i")`)
-	if code != 0 || out != `["iv", "+", "i"]`+"\n" {
-		t.Fatalf("teaching %d %s %s", code, out, err)
+	if q := read(t, root, "questions.txt"); strings.Count(q, `RomanParse.tokenize("iv + i")`) != 1 {
+		t.Fatal("question not queued exactly once:\n" + q)
 	}
-	if !strings.Contains(read(t, root, "roman_parse.star"), `    example: tokenize("iv + i") == ["iv", "+", "i"]`) {
-		t.Fatal("taught example was not saved:\n" + read(t, root, "roman_parse.star"))
+	if !strings.Contains(read(t, root, "park.html"), "Questions for you") || !strings.Contains(success(t, root, "list"), "Questions (1)") {
+		t.Fatal("question not shown in catalog and list")
+	}
+	success(t, root, "example", "add", `RomanParse.tokenize("iv + i") == ["iv", "+", "i"]`)
+	if _, err := os.Stat(filepath.Join(root, "questions.txt")); !os.IsNotExist(err) {
+		t.Fatal("answered question was not removed")
+	}
+	if strings.Contains(read(t, root, "park.html"), "Questions for you") {
+		t.Fatal("catalog still shows the answered question")
+	}
+	if out := success(t, root, "run", `RomanParse.tokenize("iv + i")`); out != `["iv", "+", "i"]`+"\n" {
+		t.Fatal(out)
 	}
 	success(t, root, "example", "remove", `RomanParse.tokenize("iv + i")`)
-	code, _, _ = invoke(t, root, false, "", "run", `RomanParse.tokenize("iv + i")`)
-	if code != 3 {
+	if code, _, _ := invoke(t, root, "run", `RomanParse.tokenize("iv + i")`); code != 3 {
 		t.Fatal(code)
 	}
 	// parse has examples in two files; removing finds each where it is written.
@@ -176,12 +184,43 @@ func TestTeachingAndExampleEdits(t *testing.T) {
 	if !strings.Contains(read(t, root, "park.html"), "needs examples") {
 		t.Fatal("catalog did not reflect readiness")
 	}
-	code, _, _ = invoke(t, root, false, "", "run", `RomanParse.parse("iv")`)
-	if code != 1 {
+	if code, _, _ := invoke(t, root, "run", `RomanParse.parse("iv")`); code != 1 {
 		t.Fatal("unready body executed", code)
 	}
 	if success(t, root, "run", `RomanParse.parse("ix")`) != "9\n" {
 		t.Fatal("known example was gated")
+	}
+}
+
+func TestQuestionsAnsweredByImplementationOrStale(t *testing.T) {
+	root := t.TempDir()
+	success(t, root, "init")
+	write(t, root, "names.star", "example: canonical(\"a\") == \"alpha\"\nexample: canonical(\"b\") == \"beta\"\n\ndef canonical(alias):\n    pass\n")
+	write(t, root, "lookup.star", "example: render(\"a\") == \"ALPHA\"\nexample: render(\"b\") == \"BETA\"\n\ndef render(value):\n    result = Names.canonical(value).upper()\n    return result\n")
+	success(t, root, "build")
+	// A miss inside a dependency asks about the dependency's call.
+	code, _, err := invoke(t, root, "run", `Lookup.render("c")`)
+	if code != 3 || !strings.Contains(err, `Names.canonical(alias="c")`) {
+		t.Fatalf("%d %q", code, err)
+	}
+	if !strings.Contains(read(t, root, "questions.txt"), `Names.canonical("c")`) {
+		t.Fatal("dependency question not queued")
+	}
+	// park test records misses too.
+	write(t, root, "lookup.star", read(t, root, "lookup.star")+"example: render(\"d\") == \"DELTA\"\n")
+	code, _, err = invoke(t, root, "test")
+	if code != 1 || !strings.Contains(read(t, root, "questions.txt"), `Names.canonical("d")`) {
+		t.Fatalf("test did not queue its miss: %d %s", code, err)
+	}
+	// Implementing the function answers its questions.
+	write(t, root, "names.star", "example: canonical(\"a\") == \"alpha\"\nexample: canonical(\"b\") == \"beta\"\n\ndef canonical(alias):\n    name = alias + \"!\"\n    return name\n")
+	write(t, root, "questions.txt", read(t, root, "questions.txt")+"Gone.f(1)\n")
+	code, _, err = invoke(t, root, "build")
+	if code != 0 || !strings.Contains(err, "dropped a question that no longer matches a function: Gone.f(1)") {
+		t.Fatalf("%d %s", code, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "questions.txt")); !os.IsNotExist(err) {
+		t.Fatal("implemented function's questions remain:\n" + read(t, root, "questions.txt"))
 	}
 }
 
@@ -220,7 +259,7 @@ func TestInitAndExamples(t *testing.T) {
 	if success(t, root, "run", "Double.label(setting=None)") != "{\"ok\": True}\n" {
 		t.Fatal("null/object lookup failed")
 	}
-	code, _, _ := invoke(t, root, false, "", "init")
+	code, _, _ := invoke(t, root, "init")
 	if code != 2 {
 		t.Fatal("init overwrote existing project")
 	}
@@ -249,7 +288,7 @@ func TestValidationHasNoSourceWrites(t *testing.T) {
 				t.Fatal("test case did not change the source")
 			}
 			write(t, root, "roman_parse.star", bad)
-			code, _, err := invoke(t, root, false, "", "build")
+			code, _, err := invoke(t, root, "build")
 			if code != 2 || !strings.Contains(err, tc.want) {
 				t.Fatalf("%d %s", code, err)
 			}
@@ -257,28 +296,6 @@ func TestValidationHasNoSourceWrites(t *testing.T) {
 				t.Fatal("validation failure changed source/catalog")
 			}
 		})
-	}
-}
-
-func TestDependencyTeachingRetriesFreshSnapshot(t *testing.T) {
-	root := t.TempDir()
-	success(t, root, "init")
-	write(t, root, "names.star", "example: canonical(\"a\") == \"alpha\"\nexample: canonical(\"b\") == \"beta\"\n\ndef canonical(alias):\n    pass\n")
-	write(t, root, "lookup.star", "example: render(\"a\") == \"ALPHA\"\nexample: render(\"b\") == \"BETA\"\n\ndef render(value):\n    result = Names.canonical(value).upper()\n    return result\n")
-	success(t, root, "build")
-	code, out, err := invoke(t, root, true, "\"gamma\"\n", "run", "--interactive", `Lookup.render("c")`)
-	if code != 0 || out != "\"GAMMA\"\n" || !strings.Contains(err, `Names.canonical(alias="c")`) {
-		t.Fatalf("%d %q %q", code, out, err)
-	}
-	if !strings.Contains(read(t, root, "names.star"), `example: canonical("c") == "gamma"`) {
-		t.Fatal("dependency not taught in its own module:\n" + read(t, root, "names.star"))
-	}
-	p, loadErr := project.LoadWith(root, nil)
-	if loadErr != nil {
-		t.Fatal(loadErr)
-	}
-	if len(p.Processes["Lookup"].Functions["render"].Examples) != 2 {
-		t.Fatal("top-level example was changed")
 	}
 }
 
@@ -305,7 +322,7 @@ func TestSameProcessDispatchCannotBypassReadiness(t *testing.T) {
 				t.Fatal(out)
 			}
 			success(t, root, "example", "remove", "Local.inner(2)")
-			code, _, err := invoke(t, root, false, "", "run", "Local.outer(3)")
+			code, _, err := invoke(t, root, "run", "Local.outer(3)")
 			if code != 1 || !strings.Contains(err, "Local.inner needs examples") {
 				t.Fatalf("inner bypassed dispatch: %d %s", code, err)
 			}
@@ -348,7 +365,7 @@ func TestProcessDeclarationNamesAndPrivateHelpers(t *testing.T) {
 	}
 	success(t, root, "test")
 	write(t, root, "other.star", "Process Numbers:\n    def f(x):\n        pass\n")
-	code, _, errout := invoke(t, root, false, "", "build")
+	code, _, errout := invoke(t, root, "build")
 	if code != 2 || !strings.Contains(errout, "declared in both") {
 		t.Fatalf("accepted duplicate process: %d %s", code, errout)
 	}
@@ -370,7 +387,7 @@ func TestSourceRestrictionsAndStepLimit(t *testing.T) {
 			success(t, root, "init")
 			before := read(t, root, "park.html")
 			write(t, root, "bad.star", source)
-			code, _, _ := invoke(t, root, false, "", "build")
+			code, _, _ := invoke(t, root, "build")
 			if code != 2 {
 				t.Fatal("invalid module was accepted", code)
 			}
@@ -382,7 +399,7 @@ func TestSourceRestrictionsAndStepLimit(t *testing.T) {
 	root := t.TempDir()
 	success(t, root, "init")
 	write(t, root, "loop.star", "example: f(1) == 0\nexample: f(2) == 1\n\ndef f(n):\n    total = 0\n    for i in range(n):\n        total += i\n    return total\n")
-	code, _, err := invoke(t, root, false, "", "run", "Loop.f(10000000)")
+	code, _, err := invoke(t, root, "run", "Loop.f(10000000)")
 	if code != 1 || !strings.Contains(err, "steps") {
 		t.Fatalf("step limit failed: %d %s", code, err)
 	}
@@ -391,7 +408,7 @@ func TestSourceRestrictionsAndStepLimit(t *testing.T) {
 	}
 }
 
-func TestObjectInputCanonicalizationAndEOF(t *testing.T) {
+func TestObjectInputCanonicalization(t *testing.T) {
 	root := t.TempDir()
 	success(t, root, "init")
 	write(t, root, "objects.star", "def f(request):\n    pass\n")
@@ -400,16 +417,12 @@ func TestObjectInputCanonicalizationAndEOF(t *testing.T) {
 		t.Fatal(out)
 	}
 	before := read(t, root, "objects.star")
-	code, _, _ := invoke(t, root, false, "", "example", "add", `Objects.f(request={"a": 1, "b": 2}) == 1`)
+	code, _, _ := invoke(t, root, "example", "add", `Objects.f(request={"a": 1, "b": 2}) == 1`)
 	if code != 2 {
 		t.Fatal("duplicate object input accepted")
 	}
-	code, _, _ = invoke(t, root, true, "", "run", "--interactive", "Objects.f(None)")
-	if code != 3 {
-		t.Fatal("EOF did not cancel unresolved call")
-	}
 	if read(t, root, "objects.star") != before {
-		t.Fatal("cancel or duplicate changed examples")
+		t.Fatal("duplicate changed examples")
 	}
 }
 
@@ -434,7 +447,7 @@ func TestNamedInputs(t *testing.T) {
 		"add(1, 2)":               "name the process",
 		"Math.add(one, 2)":        "not a literal",
 	} {
-		code, _, err := invoke(t, root, false, "", "run", call)
+		code, _, err := invoke(t, root, "run", call)
 		if code != 2 || !strings.Contains(err, want) {
 			t.Errorf("%s: %d %s", call, code, err)
 		}
@@ -458,7 +471,7 @@ func TestExamplesAreProjectWide(t *testing.T) {
 		t.Fatal("examples must not create dependencies, but code references must")
 	}
 	write(t, root, "extra.star", "example: RomanParse.parse(\"xii\") == 12\n\ndef unused(x):\n    pass\n")
-	code, _, errout := invoke(t, root, false, "", "build")
+	code, _, errout := invoke(t, root, "build")
 	if code != 2 || !strings.Contains(errout, `duplicate example for RomanParse.parse(text="xii"); first written at`) {
 		t.Fatalf("duplicate across files accepted: %d %s", code, errout)
 	}
@@ -467,36 +480,9 @@ func TestExamplesAreProjectWide(t *testing.T) {
 func TestHelpWithoutProject(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "does-not-exist")
 	for _, args := range [][]string{{"run", "--help"}, {"list", "--help"}, {"test", "--help"}, {"example", "add", "--help"}, {"example", "remove", "--help"}} {
-		code, _, err := invoke(t, root, false, "", args...)
+		code, _, err := invoke(t, root, args...)
 		if code != 0 || !strings.Contains(err, "Usage of") {
 			t.Fatalf("help failed %v: %d %s", args, code, err)
 		}
-	}
-}
-
-func TestInteractiveCancellationDoesNotWrite(t *testing.T) {
-	root := fixture(t)
-	before := read(t, root, "roman_parse.star")
-	reader, writer := io.Pipe()
-	defer reader.Close()
-	defer writer.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-	var out, err bytes.Buffer
-	c := &CLI{In: reader, Out: &out, Err: &err, Terminal: true}
-	done := make(chan int, 1)
-	go func() {
-		done <- c.Run(ctx, []string{"--root", root, "run", "--interactive", `RomanParse.tokenize("unknown")`})
-	}()
-	select {
-	case code := <-done:
-		if code != 1 {
-			t.Fatal(code)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("cancellation left prompt blocked")
-	}
-	if read(t, root, "roman_parse.star") != before {
-		t.Fatal("cancelled prompt changed authored data")
 	}
 }

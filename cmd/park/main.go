@@ -6,14 +6,11 @@ import (
 	"os/signal"
 
 	"park/internal/cli"
-
-	"golang.org/x/term"
 )
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	num := int(os.Stdin.Fd())
-	c := &cli.CLI{In: os.Stdin, Out: os.Stdout, Err: os.Stderr, Terminal: term.IsTerminal(num)}
+	c := &cli.CLI{Out: os.Stdout, Err: os.Stderr}
 	os.Exit(c.Run(ctx, os.Args[1:]))
 }

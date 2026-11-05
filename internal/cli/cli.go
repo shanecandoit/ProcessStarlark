@@ -2,7 +2,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -12,7 +11,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"golang.org/x/term"
 	"park/internal/catalog"
 	"park/internal/engine"
 	"park/internal/project"
@@ -26,7 +24,7 @@ Usage: park [--root PATH] COMMAND [FLAGS] [OPERANDS]
 
   init [DIR]                        Create an empty project and catalog
   list                              List processes and function readiness
-  run 'P.fn(args)'                  Run a call (optional --interactive)
+  run 'P.fn(args)'                  Run a call; unanswered calls go to questions.txt
   example add 'P.fn(args) == value' Add an example to the function's module
   example remove 'P.fn(args)'       Remove an example wherever it is written
   test [P.fn]                       Check examples against implementations
@@ -47,18 +45,11 @@ func fail(code int, format string, args ...any) error {
 }
 
 type CLI struct {
-	In       io.Reader
 	Out, Err io.Writer
-	// Terminal permits embedding and lets tests exercise prompt behavior explicitly.
-	Terminal bool
 }
 
-func Main(args []string, in io.Reader, out, errout io.Writer) int {
-	terminal := false
-	if file, ok := in.(*os.File); ok {
-		terminal = term.IsTerminal(int(file.Fd()))
-	}
-	c := &CLI{In: in, Out: out, Err: errout, Terminal: terminal}
+func Main(args []string, out, errout io.Writer) int {
+	c := &CLI{Out: out, Err: errout}
 	return c.Run(context.Background(), args)
 }
 func (c *CLI) flags(name string) *flag.FlagSet {
@@ -160,30 +151,6 @@ func (c *CLI) execute(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	mutating := command == "build" || command == "example"
-	// Interactive runs may persist an answer and therefore hold the mutation lock.
-	exclusive := mutating
-	if command == "run" {
-		for _, arg := range args {
-			if arg == "--interactive" || arg == "--interactive=true" {
-				exclusive = true
-			}
-		}
-	}
-	unlock, err := project.Lock(root, exclusive)
-	if err != nil {
-		return err
-	}
-	defer unlock()
-	if mutating {
-		if err := project.Recover(root); err != nil {
-			return err
-		}
-	} else {
-		if err := project.Pending(root); err != nil {
-			return err
-		}
-	}
 	p, err := project.LoadWith(root, nil)
 	if err != nil {
 		return err
@@ -239,18 +206,11 @@ func (c *CLI) init(args []string, rootFlag string) error {
 	if err != nil {
 		return err
 	}
-	for _, name := range []string{"park.html", ".park"} {
-		if _, err := os.Lstat(filepath.Join(root, name)); err == nil {
-			return fail(2, "init refuses to overwrite existing %s", name)
-		} else if !os.IsNotExist(err) {
-			return err
-		}
-	}
-	unlock, err := project.Lock(root, true)
-	if err != nil {
+	if _, err := os.Lstat(filepath.Join(root, "park.html")); err == nil {
+		return fail(2, "init refuses to overwrite existing park.html")
+	} else if !os.IsNotExist(err) {
 		return err
 	}
-	defer unlock()
 	p, err := project.LoadWith(root, nil)
 	if err != nil {
 		return err
@@ -261,7 +221,11 @@ func (c *CLI) init(args []string, rootFlag string) error {
 	fmt.Fprintf(c.Out, "Initialized %s\n", root)
 	return nil
 }
-func (c *CLI) publish(p *project.Project, edits map[string][]byte) error {
+
+// publish validates the proposed project, refreshes the question queue (adding
+// any new questions and dropping answered ones), regenerates park.html, and
+// writes everything.
+func (c *CLI) publish(p *project.Project, edits map[string][]byte, added ...project.Question) error {
 	if edits == nil {
 		edits = map[string][]byte{}
 	}
@@ -272,7 +236,16 @@ func (c *CLI) publish(p *project.Project, edits map[string][]byte) error {
 	if _, err := engine.New(proposed); err != nil {
 		return err
 	}
-	html, err := catalog.Render(proposed)
+	queued, stale, err := project.LoadQuestions(proposed)
+	if err != nil {
+		return err
+	}
+	for _, line := range stale {
+		fmt.Fprintf(c.Err, "park: dropped a question that no longer matches a function: %s\n", line)
+	}
+	open := project.OpenQuestions(proposed, queued, added)
+	edits[project.QuestionsFile] = project.FormatQuestions(open)
+	html, err := catalog.Render(proposed, open)
 	if err != nil {
 		return err
 	}
@@ -289,6 +262,16 @@ func (c *CLI) list(p *project.Project, args []string) error {
 	}
 	if _, err := engine.New(p); err != nil {
 		return err
+	}
+	queued, _, err := project.LoadQuestions(p)
+	if err != nil {
+		return err
+	}
+	if open := project.OpenQuestions(p, queued, nil); len(open) > 0 {
+		fmt.Fprintf(c.Out, "Questions (%d): answer each with an example or an implementation\n", len(open))
+		for _, q := range open {
+			fmt.Fprintf(c.Out, "  %s\n", q.Call)
+		}
 	}
 	for _, name := range project.Names(p.Processes) {
 		proc := p.Processes[name]
@@ -372,7 +355,6 @@ func (c *CLI) example(p *project.Project, args []string) error {
 }
 func (c *CLI) run(ctx context.Context, p *project.Project, args []string) error {
 	fs := c.flags("run")
-	interactive := fs.Bool("interactive", false, "Prompt for unresolved outputs when stdin is a terminal")
 	if err := parse(fs, args); err != nil {
 		return err
 	}
@@ -383,78 +365,39 @@ func (c *CLI) run(ctx context.Context, p *project.Project, args []string) error 
 	if err != nil {
 		return err
 	}
-	scanner := bufio.NewScanner(c.In)
-	scanner.Buffer(make([]byte, 4096), samples.MaxValueBytes+1)
-	for {
-		e, err := engine.New(p)
-		if err != nil {
-			return err
-		}
-		callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		output, err := e.Run(callCtx, qualified, input)
-		cancel()
-		if err == nil {
-			if _, err := samples.Canonical(output); err != nil {
-				return fail(1, "%v", err)
-			}
-			fmt.Fprintln(c.Out, samples.Literal(output))
-			return nil
-		}
-		var unresolved *engine.Unresolved
-		if !errors.As(err, &unresolved) {
-			return fail(1, "%v", err)
-		}
-		if !*interactive || !c.Terminal {
-			return unresolved
-		}
-		_, f, err := p.Function(unresolved.Function)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(c.Err, "%s\nEnter %s as a literal, e.g. \"text\", 9, or [\"a\"] (EOF cancels): ", unresolved.Error(), f.Output)
-		type lineResult struct {
-			bytes []byte
-			ok    bool
-			err   error
-		}
-		line := make(chan lineResult, 1)
-		go func() {
-			ok := scanner.Scan()
-			line <- lineResult{bytes: append([]byte(nil), scanner.Bytes()...), ok: ok, err: scanner.Err()}
-		}()
-		var answer lineResult
-		select {
-		case <-ctx.Done():
-			return fail(1, "%v", ctx.Err())
-		case answer = <-line:
-		}
-		if !answer.ok {
-			if answer.err != nil {
-				return fail(1, "prompt: %v", answer.err)
-			}
-			return unresolved
-		}
-		output, err = source.ParseValue(string(answer.bytes))
-		if err != nil {
-			fmt.Fprintln(c.Err, "Invalid output:", err)
-			continue
-		}
-		if err := ctx.Err(); err != nil {
-			return fail(1, "%v", err)
-		}
-		path, b, err := project.AddExample(p, unresolved.Function, unresolved.Input, output)
-		if err != nil {
-			return err
-		}
-		if err := c.publish(p, map[string][]byte{path: b}); err != nil {
-			return err
-		}
-		p, err = project.LoadWith(p.Root, nil)
-		if err != nil {
-			return err
-		}
+	e, err := engine.New(p)
+	if err != nil {
+		return err
 	}
+	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	output, err := e.Run(callCtx, qualified, input)
+	cancel()
+	var unresolved *engine.Unresolved
+	if errors.As(err, &unresolved) {
+		return c.ask(p, unresolved)
+	}
+	if err != nil {
+		return fail(1, "%v", err)
+	}
+	if _, err := samples.Canonical(output); err != nil {
+		return fail(1, "%v", err)
+	}
+	fmt.Fprintln(c.Out, samples.Literal(output))
+	return nil
 }
+
+// ask adds an unanswered call to the question queue and explains how to answer it.
+func (c *CLI) ask(p *project.Project, unresolved *engine.Unresolved) error {
+	q, err := project.NewQuestion(p, unresolved.Function, unresolved.Input)
+	if err != nil {
+		return err
+	}
+	if err := c.publish(p, nil, q); err != nil {
+		return err
+	}
+	return fail(3, "no answer for %s; added to %s\nAnswer it with an example:\n  park example add '%s == ...'\nor implement %s.", engine.FormatCall(unresolved.Function, unresolved.Inputs, unresolved.Input), project.QuestionsFile, q.Call, q.Function)
+}
+
 func (c *CLI) test(ctx context.Context, p *project.Project, args []string) error {
 	fs := c.flags("test")
 	if err := parse(fs, args); err != nil {
@@ -474,6 +417,7 @@ func (c *CLI) test(ctx context.Context, p *project.Project, args []string) error
 	}
 	e.Testing = true
 	checks, records, failures := 0, 0, 0
+	var questions []project.Question
 	for _, name := range project.Names(p.Processes) {
 		proc := p.Processes[name]
 		for _, fn := range project.Names(proc.Functions) {
@@ -498,6 +442,12 @@ func (c *CLI) test(ctx context.Context, p *project.Project, args []string) error
 				callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 				output, err := e.Run(callCtx, qualified, pair.Input)
 				cancel()
+				var unresolved *engine.Unresolved
+				if errors.As(err, &unresolved) {
+					if q, qerr := project.NewQuestion(p, unresolved.Function, unresolved.Input); qerr == nil {
+						questions = append(questions, q)
+					}
+				}
 				if err != nil {
 					failures++
 					fmt.Fprintf(c.Err, "FAIL %s (%s:%d): %v\n", engine.FormatCall(qualified, f.Inputs, pair.Input), pair.Path, pair.Line, err)
@@ -509,6 +459,12 @@ func (c *CLI) test(ctx context.Context, p *project.Project, args []string) error
 		}
 	}
 	fmt.Fprintf(c.Out, "%d implementation checks, %d example-only records, %d failures\n", checks, records, failures)
+	if len(questions) > 0 {
+		if err := c.publish(p, nil, questions...); err != nil {
+			return err
+		}
+		fmt.Fprintf(c.Err, "Added %d unanswered calls to %s; see park list.\n", len(questions), project.QuestionsFile)
+	}
 	if failures > 0 {
 		return fail(1, "tests failed")
 	}

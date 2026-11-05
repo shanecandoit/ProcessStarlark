@@ -1,14 +1,13 @@
 package project
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestSafePathsAndLock(t *testing.T) {
+func TestSafePaths(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()
 	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
@@ -19,80 +18,25 @@ func TestSafePathsAndLock(t *testing.T) {
 			t.Errorf("accepted escaping path %q", path)
 		}
 	}
-	unlock, err := Lock(root, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if second, err := Lock(root, false); err == nil {
-		second()
-		t.Fatal("reader entered during mutation")
-	}
-	unlock()
-	reader, err := Lock(root, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer reader()
-	second, err := Lock(root, false)
-	if err != nil {
-		t.Fatal("shared reads should coexist", err)
-	}
-	second()
 }
-func TestRecoveryRestoresCompleteSnapshot(t *testing.T) {
+
+func TestPublishWritesOnlyModulesAndCatalog(t *testing.T) {
 	root := t.TempDir()
-	unlock, err := Lock(root, true)
-	if err != nil {
+	if err := Publish(root, map[string][]byte{"p.star": []byte("def f(x):\n    pass\n"), "park.html": []byte("catalog")}); err != nil {
 		t.Fatal(err)
 	}
-	defer unlock()
-	original := []byte("original sidecar\n")
-	catalog := []byte("original catalog\n")
-	j := journal{Version: 1, Before: map[string][]byte{"p.star": original, "park.html": catalog, "new.star": nil}, After: map[string][]byte{"p.star": []byte("new sidecar"), "park.html": []byte("new catalog"), "new.star": []byte("new")}}
-	b, err := json.Marshal(j)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for name, contents := range map[string][]byte{journalPath: b, "p.star": []byte("new sidecar"), "park.html": catalog, "new.star": []byte("new")} {
-		if err := AtomicWrite(root, name, contents); err != nil {
-			t.Fatal(err)
+	for name, want := range map[string]string{"p.star": "def f(x):\n    pass\n", "park.html": "catalog"} {
+		if b, err := os.ReadFile(filepath.Join(root, name)); err != nil || string(b) != want {
+			t.Fatalf("%s: %q %v", name, b, err)
 		}
 	}
-	if err := Pending(root); err == nil {
-		t.Fatal("reader did not detect unfinished mutation")
-	}
-	if err := Recover(root); err != nil {
-		t.Fatal(err)
-	}
-	for name, expected := range map[string][]byte{"p.star": original, "park.html": catalog} {
-		actual, err := os.ReadFile(filepath.Join(root, name))
-		if err != nil || string(actual) != string(expected) {
-			t.Fatalf("%s not restored: %q %v", name, actual, err)
+	for _, bad := range []string{"../outside.star", "notes.txt", "sub/p.star"} {
+		if err := Publish(root, map[string][]byte{bad: []byte("x")}); err == nil {
+			t.Errorf("accepted edit to %s", bad)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(root, "new.star")); !os.IsNotExist(err) {
-		t.Fatal("new file was not rolled back")
-	}
-	if err := Pending(root); err != nil {
-		t.Fatal(err)
-	}
 }
-func TestInvalidJournalDoesNotTouchFiles(t *testing.T) {
-	root := t.TempDir()
-	unlock, err := Lock(root, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer unlock()
-	j := journal{Version: 1, Before: map[string][]byte{"../outside.star": []byte("bad")}, After: map[string][]byte{}}
-	b, _ := json.Marshal(j)
-	if err := AtomicWrite(root, journalPath, b); err != nil {
-		t.Fatal(err)
-	}
-	if err := Recover(root); err == nil {
-		t.Fatal("accepted invalid recovery path")
-	}
-}
+
 func TestCyclesAndSymlinkedFiles(t *testing.T) {
 	root := t.TempDir()
 	for name, dep := range map[string]string{"a": "B", "b": "A"} {

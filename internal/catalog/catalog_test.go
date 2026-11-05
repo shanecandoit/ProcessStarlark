@@ -17,7 +17,7 @@ func TestSelectionAndEscaping(t *testing.T) {
 	}
 	f := &project.Function{Name: "f", Signature: "f(tag, attribute) markup", Inputs: []string{"tag", "attribute"}, Output: "markup", Description: "<script>alert(1)</script>", Examples: []project.Example{{Input: map[string]any{"tag": "<b>", "attribute": "x"}, Output: "</b>"}}}
 	p := &project.Project{Revision: "revision", Processes: map[string]*project.Process{"P": {Name: "P", Functions: map[string]*project.Function{"f": f}}}}
-	html, err := Render(p)
+	html, err := Render(p, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

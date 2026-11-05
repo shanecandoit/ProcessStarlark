@@ -26,10 +26,12 @@ defines the implementation contract:
 - Regenerate `park.html` after CLI changes to examples, and on `park build`.
   Include the first two and last two examples for each function, without
   duplicates.
-- Support an interactive prompt for an unresolved call. Writing an
-  implementation means editing a `.star` file and rerunning; an inline code
-  editor, synthesis, nested processes, and remote services are outside this
-  version.
+- Queue each unresolved call in `questions.txt` as a question for the user,
+  answered by adding an example or implementing the function. Show open
+  questions at the top of `park.html` and in `park list`. Questions are local
+  files for now; a later version moves them, with examples, to a database
+  behind a REST API. Synthesis, nested processes, and remote services are
+  outside this version.
 
 The CLI is implemented in `cmd/park`. Keep the README's status and quick start,
 and `docs/reference.md`'s usage details, current. The acceptance checks below
@@ -45,7 +47,6 @@ The repository contains `cmd/park` and internal `cli`, `project`, `source`,
 roman_parse.star
 roman_add.star
 .cache/             # Disposable computed results, canonical JSON
-.park/              # Project lock and recovery journal
 park.html           # Generated offline catalog
 ```
 
@@ -123,7 +124,7 @@ validate Roman grammar. `roman_add.star` also carries
 
 ### Discovery and validation
 
-Use only the current directory, checking for `.park/` or `.star` modules without
+Use only the current directory, checking for `.star` modules or `park.html` without
 searching parent directories. `--root PATH` explicitly selects the project
 root. `park init [DIR]` creates an empty catalog and internal project state
 without overwriting generated project state. `park build` validates the
@@ -138,15 +139,14 @@ Keep files inside the root and reject symlinked modules.
 
 Use Go's standard `flag` package. Global `--root PATH` precedes the command;
 command flags precede positional operands. Calls are one Starlark expression
-with literal arguments, parsed by Starlark's expression parser. Errors and
-prompts go to stderr; a successful run prints one output as a Starlark literal.
+with literal arguments, parsed by Starlark's expression parser. The CLI never
+reads stdin. Errors go to stderr; a successful run prints one output as a Starlark literal.
 
 - `park init [DIR]`: create an empty project and catalog.
 - `park list`: list processes, functions, readiness, and example counts.
-- `park run 'RomanParse.parse("ix")'`: look up or compute one output.
-- `park run --interactive 'RomanParse.tokenize("iv + i")'`: prompt for an
-  output literal if the call is unresolved and stdin is a terminal, then save
-  it as an example.
+- `park run 'RomanParse.parse("ix")'`: look up or compute one output. If the
+  call is unresolved, add a question to `questions.txt`, regenerate
+  `park.html`, print the `park example add` command that answers it, and exit 3.
 - `park example add 'RomanParse.parse("xiv") == 14'`: add an example line to
   the target function's own module, after that module's last example (else
   after the process docstring, the Process header, or at the top of the file).
@@ -169,8 +169,21 @@ Exit codes:
 - `2`: usage or project validation error.
 - `3`: unresolved call.
 
-Prompt only with `--interactive` and a terminal. Report the exact unresolved
-call, including misses inside dependencies.
+Report the exact unresolved call, including misses inside dependencies; the
+question is about that innermost call.
+
+### Question queue
+
+- `questions.txt` lists one call per line in call syntax, in arrival order,
+  after a fixed comment header. Duplicates are queued once.
+- Every publish (`build`, `example add/remove`, and runs or tests that queue
+  questions) reloads the queue against the proposed project, drops questions
+  that now have an example or whose function now has an implementation, and
+  rewrites the file. An empty queue removes the file.
+- Lines that no longer parse or bind to a function (after a rename, say) are
+  dropped with a notice on stderr.
+- The queue is not part of the project revision, so it never invalidates the
+  cache.
 
 ## Values, example database, and cache
 
@@ -211,11 +224,8 @@ For each dispatched call:
 2. Check the computed cache for the current execution revision.
 3. If a body exists, require two distinct authored examples, execute with a step
    limit and cancellation support, validate the result, and cache success.
-4. Otherwise return an unresolved-call error. In interactive mode, prompt for a
-   literal output, persist it through the same example-add path,
-   and retry the top-level call under a fresh project snapshot/revision. Do not
-   mix results from before and after that edit. EOF or cancellation makes no
-   change.
+4. Otherwise return an unresolved-call error, which the CLI turns into a
+   queued question.
 
 Keep a deterministic environment: expose only approved builtins and project
 process namespaces, freeze module globals, and expose no filesystem, network,
@@ -239,7 +249,7 @@ returning its expected value. Dependencies retain normal dispatch, with computed
 cache disabled throughout the test run. Report implementation checks separately
 from example-only records, which can be validated as data but cannot prove a
 body. Do not persist computed results from tests. A dependency miss fails a test
-without prompting.
+and is queued as a question.
 
 ## Generated `park.html`
 
@@ -263,15 +273,13 @@ All successful example additions and removals regenerate the full catalog from t
 edits; there is no watcher in v1. Runtime cache writes alone do not regenerate
 the page.
 
-Serialize mutating commands with a project lock. Validate and stage source edits
-and rendered HTML before publishing. Use temp files and atomic rename per file;
-several files cannot be replaced atomically as one operation. Keep a small
-recovery journal with original contents and staged changes so interrupted
-mutations can be completed or rolled back on the next mutating command/build.
-Fail before changes on validation/render errors; report publication failures
-explicitly. Never print success while known source/catalog inconsistency
-remains. Read-only commands refuse an unfinished mutation with a recovery
-instruction. Generated HTML is never an input database.
+Validate the proposed project and render HTML before writing anything; fail
+before changes on validation or render errors. Then write each edited module,
+then `park.html`, each through a temp file and atomic rename. Modules are the
+source of truth and the catalog is derived, so there is no lock or recovery
+journal: if a write fails after a module is saved, report that `park.html` is
+stale and that `park build` regenerates it. Generated HTML is never an input
+database.
 
 ## Acceptance checks
 
@@ -288,17 +296,17 @@ instruction. Generated HTML is never an input database.
 - **Catalog and edits:** example add/remove is reflected in source and HTML,
   add then remove restores the module byte for byte, comments survive,
   first/last selection for counts 0–6, escaped content, deterministic output,
-  manual edits plus `build`, and interrupted-write recovery.
+  and manual edits plus `build`.
 - **CLI:** call parsing and literal typing, exit codes, an unseen input
   executing a body, a second run using the cache, and an unresolved call
-  exiting in unattended mode or saving an answer interactively, including for a
-  dependency.
+  (including inside a dependency or a test) queued once, shown in `list` and
+  `park.html`, and removed when answered by an example or an implementation.
 - **Release check:** keep the README quick start working; run `gofmt`,
   `go vet ./...`, and `go test ./...`; build `./cmd/park` and exercise a
   temporary project from init through example edits, run, test, and rebuild.
 
 Done means a user can write a `.star` module, add examples from the CLI or by
-hand, execute or teach a call, and open an accurate `park.html` after each CLI
+hand, run a call or answer a queued question, and open an accurate `park.html` after each CLI
 edit. Removing examples and manually rebuilding must leave the example set and
 catalog consistent.
 

@@ -97,7 +97,7 @@ same answer.
   the function or where it is used.
 - Examples for functions that are never called are welcome: low friction, and
   more examples are better.
-- `park example add` and interactive teaching write to the target function's
+- `park example add` writes to the target function's
   own file, after its last example.
 - A function's examples list those in its own module first, then those written
   elsewhere. This order decides which examples the catalog shows.
@@ -139,7 +139,7 @@ Everything about a process lives in its `.star` file. Signatures come from the
 code (D2, D4), descriptions from docstrings, examples from `example:` lines,
 and dependencies from references to other processes in the code.
 
-- Cost: `park example add` and teaching edit source files rather than data
+- Cost: `park example add` edits source files rather than data
   files. The `register`, `process`, and `function` commands are no longer
   needed.
 
@@ -178,6 +178,39 @@ time limits. Results are safe to cache.
 Computed results are cached under a project-wide revision: a hash of all
 sources and the codec/engine version. Any edit invalidates the whole cache,
 which is always safe to delete. There is no per-function versioning yet.
+
+### D15. No lock or recovery journal
+**Implemented** · 2026-11-05, supersedes the v1 journal and project lock
+
+Edits validate the whole proposed project first, then write the edited module
+and then `park.html`, each with an atomic rename. If something fails after the
+module is saved, only the catalog can be stale, and `park build` regenerates it.
+
+- Why: with YAML gone, an edit changes one source file, and the catalog is
+  derived from source. Multi-file recovery protected against a problem that no
+  longer exists, at the cost of ~200 lines, a `.park/` folder, and
+  "unfinished mutation" errors.
+- Cost: two `park` commands editing the same project at the same moment are not
+  serialized; the later write wins. Acceptable for a local, single-user tool.
+
+### D16. Unanswered calls become queued questions
+**Implemented** · 2026-11-05, supersedes `park run --interactive`
+
+When no example or implementation answers a call, Park adds it to
+`questions.txt` and prints the `park example add` command that answers it. Open
+questions appear at the top of `park.html` and `park list`. A question is
+answered by an example for that call or by implementing the function, and is
+then removed automatically. `park test` queues its misses too.
+
+- Why: a queue is plain files, so it's simple to build and to test. Holding the
+  terminal open to ask meant stdin handling, cancellation, and a reload-and-retry
+  loop, and tests needed pipes and timers. The queue also collects questions
+  from runs nobody is watching.
+- Name: "questions", because each one waits for the user to answer it, with an
+  example or with code.
+- Later: questions and examples move to a database behind a REST API. The
+  queue file is the local stand-in.
+- Cost: answering is a second command rather than typing at a prompt.
 
 ## Open questions
 

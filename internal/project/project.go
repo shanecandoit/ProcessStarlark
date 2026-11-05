@@ -213,10 +213,7 @@ func Discover(start string) (string, error) {
 		return "", err
 	}
 	for _, entry := range entries {
-		if entry.Name() == ".park" && entry.IsDir() {
-			return root, nil
-		}
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".star") {
+		if !entry.IsDir() && (strings.HasSuffix(entry.Name(), ".star") || entry.Name() == "park.html") {
 			return root, nil
 		}
 	}
@@ -555,11 +552,15 @@ func (p *Project) Function(qualified string) (*Process, *Function, error) {
 	}
 	proc := p.Processes[parts[0]]
 	if proc == nil {
-		return nil, nil, fmt.Errorf("unknown process %s", parts[0])
+		known := "none; add a .star file"
+		if len(p.Processes) > 0 {
+			known = strings.Join(Names(p.Processes), ", ")
+		}
+		return nil, nil, fmt.Errorf("unknown process %s in %s (processes here: %s)", parts[0], p.Root, known)
 	}
 	f := proc.Functions[parts[1]]
 	if f == nil {
-		return nil, nil, fmt.Errorf("unknown function %s", qualified)
+		return nil, nil, fmt.Errorf("unknown function %s (%s has: %s)", qualified, proc.Name, strings.Join(Names(proc.Functions), ", "))
 	}
 	return proc, f, nil
 }
