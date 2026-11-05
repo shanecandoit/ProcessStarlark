@@ -15,7 +15,9 @@ in the [implementation plan](../plan.md).
   `example: parse("ix") == 9`. Examples are authoritative. All examples in a
   project form one set, wherever they are written.
 - **Readiness:** an implemented function runs its body only after it has two or
-  more distinct examples. Until then, it shows as `needs examples`.
+  more distinct examples. Until then, it shows as `needs examples`. This is an
+  authoring requirement, not a verification result. `park run` does not require
+  passing tests; use `park test` to check the implementation against examples.
 - **Cache:** computed results go in `.cache/`. It's disposable and is
   invalidated whenever any source file or the runtime changes.
 
@@ -28,7 +30,10 @@ For each call, the runtime:
 3. Otherwise executes the implementation, if it's present and ready, and caches
    a successful output.
 4. Otherwise reports an unresolved call and adds it to the question queue
-   (see below).
+   (see below). This includes a body blocked by the two-example requirement.
+
+Errors from a ready implementation, such as invalid input, a failed operation,
+or an execution limit, remain evaluation errors; they are not queued questions.
 
 Computed results never count toward readiness. Execution has no filesystem,
 network, clock, environment, or randomness APIs.
@@ -37,6 +42,11 @@ network, clock, environment, or randomness APIs.
 lookup for the function under test, disables the computed cache, and writes
 nothing to it. Example-only functions are validated as data and reported
 separately.
+
+All examples are checked, including any intended exceptions to a general rule.
+Matching examples still answer runtime calls, but a disagreeing implementation
+fails `park test`. There is no exception annotation or automatic test exemption;
+the implementation must handle those cases too for the tests to pass.
 
 ## Project format
 
@@ -148,7 +158,10 @@ example: route({"component": "login", "labels": ["bug"]}) == "auth"
 
 Call another process with `RomanParse.parse(text)`. Park detects these
 references as dependencies; there is nothing to declare, and dependency cycles
-are rejected. Within a process, both `parse(text)` and `RomanParse.parse(text)`
+are rejected. Build validation rejects direct references to missing or private
+members of process namespaces, even in functions that aren't run. Ordinary
+methods on input values and local variables are unaffected. Within a process,
+both `parse(text)` and `RomanParse.parse(text)`
 use example-aware dispatch and enforce readiness. Callers can pass inputs by
 position or by name: `Math.add(9, 6)` and `Math.add(right=6, left=9)` are the
 same call and share examples and cached results.
@@ -198,15 +211,15 @@ build                             Validate and regenerate park.html
 
 ## Questions
 
-When Park can't answer a call, because it has no example and no code, it asks
-you instead of guessing:
+When a call has no matching example and either no implementation or an
+implementation with fewer than two distinct examples, Park queues a question:
 
 ```text
 $ park run 'Shipping.quote("JP", 800)'
 park: no answer for Zones.zone(country="JP"); added to questions.txt
 Answer it with an example:
   park example add 'Zones.zone("JP") == ...'
-or implement Zones.zone.
+or implement Zones.zone with at least two distinct examples.
 ```
 
 - The question is about the call Park couldn't answer, which may be inside a
@@ -214,8 +227,11 @@ or implement Zones.zone.
 - Open questions are listed in `questions.txt`, at the top of `park list`, and
   at the top of `park.html`.
 - Answer a question by adding an example for that call, or by implementing the
-  function. Answered questions are removed automatically, and the file is
-  deleted when the queue is empty.
+  function with at least two distinct examples. Merely adding a body doesn't
+  clear the question. Questions are removed automatically once an exact example
+  exists or the body is ready, and the file is deleted when the queue is empty.
+  Removing a question because its body is ready does not execute or verify that
+  body; it may still fail or encounter a missing answer in a dependency.
 - Park never reads from the terminal; answering is always a separate command
   or a source edit.
 
@@ -227,6 +243,6 @@ validation error, `3` unresolved call.
 - **v2 call samples:** keep each function's first few and most recent few
   calls as canonical JSON records, to show real usage. These samples are
   separate from authored examples and never count toward readiness.
-- **Later:** marking examples as deliberate exceptions, per-function versions,
-  nested processes, and synthesizing implementations from examples. See the
+- **Later:** per-function versions, nested processes, and synthesizing
+  implementations from examples. See the
   open questions in [Design decisions](design.md#open-questions).

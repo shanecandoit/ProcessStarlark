@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"go.starlark.net/resolve"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
 	"go.starlark.net/syntax"
@@ -18,12 +19,16 @@ const MaxSteps = 1_000_000
 const MaxCalls = 128
 
 type Unresolved struct {
-	Function string
-	Inputs   []string       // Input names in signature order, for display.
-	Input    map[string]any // Named inputs.
+	Function      string
+	Inputs        []string       // Input names in signature order, for display.
+	Input         map[string]any // Named inputs.
+	NeedsExamples bool           // A body exists but is not ready to run.
 }
 
 func (u *Unresolved) Error() string {
+	if u.NeedsExamples {
+		return u.Function + " needs examples: body requires two distinct authored inputs; unresolved call " + FormatCall(u.Function, u.Inputs, u.Input)
+	}
 	return "unresolved call " + FormatCall(u.Function, u.Inputs, u.Input)
 }
 
@@ -225,6 +230,33 @@ func (e *Engine) load(name string) error {
 	if err != nil {
 		return err
 	}
+	// Resolution distinguishes process namespaces from locals with the same
+	// spelling. Validate direct members even in bodies that never execute.
+	syntax.Walk(file, func(node syntax.Node) bool {
+		if walkErr != nil {
+			return false
+		}
+		dot, ok := node.(*syntax.DotExpr)
+		if !ok {
+			return true
+		}
+		id, ok := dot.X.(*syntax.Ident)
+		if !ok {
+			return true
+		}
+		binding, ok := id.Binding.(*resolve.Binding)
+		if !ok || binding.Scope != resolve.Predeclared {
+			return true
+		}
+		if target := e.Project.Processes[id.Name]; target != nil && target.Functions[dot.Name.Name] == nil {
+			walkErr = fmt.Errorf("%s: unknown function %s.%s; declare a public function in %s", dot.Name.NamePos, id.Name, dot.Name.Name, target.Module)
+			return false
+		}
+		return true
+	})
+	if walkErr != nil {
+		return walkErr
+	}
 	thread := &starlark.Thread{Name: "initialize " + name}
 	thread.SetMaxExecutionSteps(MaxSteps)
 	globals, err := program.Init(thread, pre)
@@ -336,13 +368,10 @@ func (e *Engine) dispatch(thread *starlark.Thread, qualified string, raw any) (a
 		}
 	}
 	body := e.bodies[qualified]
-	if body == nil {
-		u := &Unresolved{Function: qualified, Inputs: f.Inputs, Input: input}
+	if body == nil || !f.Ready() {
+		u := &Unresolved{Function: qualified, Inputs: f.Inputs, Input: input, NeedsExamples: body != nil}
 		e.unresolved = u
 		return nil, u
-	}
-	if len(f.Examples) < 2 {
-		return nil, fmt.Errorf("%s needs examples: body requires two distinct authored inputs", qualified)
 	}
 	callKey := qualified + "\x00" + key
 	if e.active[callKey] {

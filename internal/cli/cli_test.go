@@ -184,8 +184,11 @@ func TestUnansweredCallsBecomeQuestions(t *testing.T) {
 	if !strings.Contains(read(t, root, "park.html"), "needs examples") {
 		t.Fatal("catalog did not reflect readiness")
 	}
-	if code, _, _ := invoke(t, root, "run", `RomanParse.parse("iv")`); code != 1 {
+	if code, _, _ := invoke(t, root, "run", `RomanParse.parse("iv")`); code != 3 {
 		t.Fatal("unready body executed", code)
+	}
+	if !strings.Contains(read(t, root, "questions.txt"), `RomanParse.parse("iv")`) {
+		t.Fatal("unready call was not queued")
 	}
 	if success(t, root, "run", `RomanParse.parse("ix")`) != "9\n" {
 		t.Fatal("known example was gated")
@@ -236,6 +239,113 @@ func TestExampleEditsPreserveSource(t *testing.T) {
 	success(t, root, "example", "remove", `RomanParse.parse("xiv")`)
 	if read(t, root, "roman_parse.star") != source {
 		t.Fatal("add then remove did not restore the module")
+	}
+}
+
+func TestQuestionsRemainUntilImplementationIsReady(t *testing.T) {
+	root := t.TempDir()
+	success(t, root, "init")
+	write(t, root, "double.star", "def double(value):\n    pass\n")
+	if code, _, _ := invoke(t, root, "run", "Double.double(3)"); code != 3 {
+		t.Fatal("expected unanswered call", code)
+	}
+	write(t, root, "double.star", "def double(value):\n    result = value * 2\n    return result\n")
+	for count := range 2 { // Neither zero nor one example may clear the question.
+		if count == 1 {
+			success(t, root, "example", "add", "Double.double(1) == 2")
+		}
+		success(t, root, "build")
+		if !strings.Contains(read(t, root, "questions.txt"), "Double.double(3)") || !strings.Contains(success(t, root, "list"), "Questions (1)") || !strings.Contains(read(t, root, "park.html"), "Questions for you") {
+			t.Fatal("unready implementation cleared its question")
+		}
+		code, _, errout := invoke(t, root, "run", "Double.double(3)")
+		if code != 3 || !strings.Contains(errout, "Double.double needs examples") || !strings.Contains(errout, "park example add 'Double.double(3) == ...'") {
+			t.Fatalf("unready call should queue an actionable question: %d %s", code, errout)
+		}
+		if strings.Count(read(t, root, "questions.txt"), "Double.double(3)") != 1 || len(files(t, root, ".cache")) != 0 {
+			t.Fatal("unready call duplicated its question or wrote cache")
+		}
+	}
+	if success(t, root, "run", "Double.double(1)") != "2\n" {
+		t.Fatal("known example should still answer")
+	}
+	success(t, root, "example", "add", "Double.double(2) == 4")
+	if _, err := os.Stat(filepath.Join(root, "questions.txt")); !os.IsNotExist(err) {
+		t.Fatal("ready implementation should clear its question", err)
+	}
+	if success(t, root, "run", "Double.double(3)") != "6\n" {
+		t.Fatal("ready body did not execute")
+	}
+	// An exact example also answers a question without enabling the body.
+	success(t, root, "example", "remove", "Double.double(2)")
+	if code, _, _ := invoke(t, root, "run", "Double.double(4)"); code != 3 {
+		t.Fatal("expected new unready question", code)
+	}
+	success(t, root, "example", "remove", "Double.double(1)")
+	success(t, root, "example", "add", "Double.double(4) == 8")
+	if _, err := os.Stat(filepath.Join(root, "questions.txt")); !os.IsNotExist(err) {
+		t.Fatal("exact example should clear its question", err)
+	}
+}
+
+func TestBuildRejectsUnknownProcessMembers(t *testing.T) {
+	for label, expression := range map[string]string{
+		"same process": "Fact.missing(key)",
+		"dependency":   "Other.missing(key)",
+		"private":      "Other._helper(key)",
+		"reference":    "Other.missing",
+	} {
+		t.Run(label, func(t *testing.T) {
+			root := t.TempDir()
+			success(t, root, "init")
+			html := read(t, root, "park.html")
+			write(t, root, "other.star", "def known(key):\n    pass\n\ndef _helper(key):\n    return key\n")
+			bad := "Process Fact:\n    def lookup(key):\n        answer = " + expression + "\n        return answer\n"
+			write(t, root, "fact.star", bad)
+			write(t, root, "questions.txt", "Fact.lookup(1)\n")
+			code, _, errout := invoke(t, root, "build")
+			if code != 2 || !strings.Contains(errout, "unknown function") || !strings.Contains(errout, "fact.star:3:") {
+				t.Fatalf("bad member should fail build with location: %d %s", code, errout)
+			}
+			if read(t, root, "park.html") != html || read(t, root, "fact.star") != bad || read(t, root, "questions.txt") != "Fact.lookup(1)\n" {
+				t.Fatal("failed validation changed project files")
+			}
+		})
+	}
+	root := t.TempDir()
+	success(t, root, "init")
+	write(t, root, "fact.star", `Process Fact:
+    example: lookup("a") == "A"
+    example: lookup("b") == "B"
+    def _local(Fact):
+        return Fact.upper()
+    def lookup(key):
+        answer = _local(key)
+        return answer
+`)
+	success(t, root, "build")
+	if success(t, root, "run", `Fact.lookup("c")`) != "\"C\"\n" {
+		t.Fatal("local method call was treated as a process member")
+	}
+}
+
+func TestReadyDoesNotImplyVerified(t *testing.T) {
+	root := t.TempDir()
+	success(t, root, "init")
+	write(t, root, "words.star", `Process Words:
+    example: plural("cat") == "cats"
+    example: plural("ox") == "oxen"
+    def plural(noun):
+        word = noun + "s"
+        return word
+`)
+	success(t, root, "build")
+	if success(t, root, "run", `Words.plural("ox")`) != "\"oxen\"\n" || success(t, root, "run", `Words.plural("dog")`) != "\"dogs\"\n" {
+		t.Fatal("examples must remain authoritative and the ready body may run")
+	}
+	code, _, errout := invoke(t, root, "test")
+	if code != 1 || !strings.Contains(errout, `got "oxs"; expected "oxen"`) {
+		t.Fatalf("strict tests must report intentional disagreements: %d %s", code, errout)
 	}
 }
 
@@ -323,8 +433,15 @@ func TestSameProcessDispatchCannotBypassReadiness(t *testing.T) {
 			}
 			success(t, root, "example", "remove", "Local.inner(2)")
 			code, _, err := invoke(t, root, "run", "Local.outer(3)")
-			if code != 1 || !strings.Contains(err, "Local.inner needs examples") {
+			if code != 3 || !strings.Contains(err, "Local.inner needs examples") {
 				t.Fatalf("inner bypassed dispatch: %d %s", code, err)
+			}
+			if q := read(t, root, "questions.txt"); !strings.Contains(q, "Local.inner(3)") || strings.Contains(q, "Local.outer(3)") {
+				t.Fatal("question must identify the blocked dependency:\n" + q)
+			}
+			code, _, err = invoke(t, root, "test", "Local.outer")
+			if code != 1 || !strings.Contains(err, "Local.inner needs examples") || !strings.Contains(read(t, root, "questions.txt"), "Local.inner(2)") {
+				t.Fatalf("test did not queue its unready dependency: %d %s", code, err)
 			}
 		})
 	}

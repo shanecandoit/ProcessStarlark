@@ -395,7 +395,10 @@ func (c *CLI) ask(p *project.Project, unresolved *engine.Unresolved) error {
 	if err := c.publish(p, nil, q); err != nil {
 		return err
 	}
-	return fail(3, "no answer for %s; added to %s\nAnswer it with an example:\n  park example add '%s == ...'\nor implement %s.", engine.FormatCall(unresolved.Function, unresolved.Inputs, unresolved.Input), project.QuestionsFile, q.Call, q.Function)
+	if unresolved.NeedsExamples {
+		return fail(3, "no answer for %s; added to %s\n%s needs examples: body requires two distinct authored inputs.\nAnswer this call with an example:\n  park example add '%s == ...'\nor add enough examples to enable %s's implementation.", engine.FormatCall(unresolved.Function, unresolved.Inputs, unresolved.Input), project.QuestionsFile, q.Function, q.Call, q.Function)
+	}
+	return fail(3, "no answer for %s; added to %s\nAnswer it with an example:\n  park example add '%s == ...'\nor implement %s with at least two distinct examples.", engine.FormatCall(unresolved.Function, unresolved.Inputs, unresolved.Input), project.QuestionsFile, q.Call, q.Function)
 }
 
 func (c *CLI) test(ctx context.Context, p *project.Project, args []string) error {
@@ -431,7 +434,7 @@ func (c *CLI) test(ctx context.Context, p *project.Project, args []string) error
 				fmt.Fprintf(c.Out, "DATA %s: %d example-only records\n", qualified, len(f.Examples))
 				continue
 			}
-			if len(f.Examples) < 2 {
+			if !f.Ready() {
 				failures++
 				fmt.Fprintf(c.Err, "FAIL %s: needs examples\n", qualified)
 				continue

@@ -22,12 +22,14 @@ Park starts from the known cases and keeps them central as code is added.
    matches an authored example returns that example's output, even when an
    implementation exists. Examples are the source of truth, not checks run
    after the fact.
-2. **Code is optional and has to earn its place.** A function can stay an
+2. **Code is optional and starts with examples.** A function can stay an
    example table forever. Once it has a body, the body won't run until the
-   function has at least two distinct examples.
-3. **Unknown inputs become new examples.** When nothing answers a call, Park
-   reports it instead of guessing and queues it as a question. You answer it
-   with a new example or with code.
+   function has at least two distinct examples. This authoring requirement
+   doesn't verify the body; `park test` checks whether it agrees with examples.
+3. **Unanswered calls become questions.** With no matching example and no ready
+   implementation, Park queues a question. You answer it with a new example or
+   an implementation enabled by at least two distinct examples. Errors from
+   executing a ready implementation are reported as errors, not questions.
 4. **Everything is pure and deterministic.** Functions have no filesystem,
    network, clock, environment, or randomness. Results are reproducible and safe
    to cache, and `park test` can check every example.
@@ -61,10 +63,13 @@ in stateless Process namespaces, with examples written beside the code. It suits
 rule-like functions that people need to read, check, and extend by adding cases.
 It isn't meant for I/O, large programs, or performance-critical code.
 
-## Known tension
+## Implementation checks are strict
 
 `park test` runs each implementation against every one of its authored
 examples. A function whose examples are deliberate exceptions to its rule (for
 example, irregular plurals beside an "add s" rule) works correctly when called,
-but it fails `park test`. Whether to support marked exceptions is an open
-design question.
+but it fails `park test`. This is intentional: every example is a required
+implementation check, with no exception annotation. To pass the tests, the
+implementation must handle the irregular cases too. Runtime example precedence
+and implementation verification are separate guarantees; readiness alone does
+not mean the implementation has passed its tests.

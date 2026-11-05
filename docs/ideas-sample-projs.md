@@ -131,9 +131,10 @@ park run 'Shipping.quote("DE", 800)'                  # 2799
 A new country is a new example, not a code change, and Park never guesses a
 zone. `park.html` shows the zone table to anyone.
 
-Negotiated one-off prices are deliberate exceptions: the example answers the
-call correctly, but `park test` flags it because the rule disagrees. See the
-open questions in [Design decisions](design.md#open-questions).
+Negotiated one-off prices can override a runtime call through an example, but
+`park test` still flags the disagreement. Strict checks are intentional: the
+implementation must handle the negotiated price too for tests to pass. See
+[D17](design.md#d17-every-example-is-a-strict-implementation-check).
 
 ## Geometry: shapes on a grid
 

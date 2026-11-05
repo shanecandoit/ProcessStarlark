@@ -64,8 +64,9 @@ Now `xiv` gives `14`. Your examples are still in charge:
 - Examples can be written in any file and name any function. They all go into
   one project-wide set.
 - `park test` checks that the code gives the same answers as your examples.
-- Park won't run the code until you've given it at least two examples, so a rule
-  can't run until you've shown it some correct answers.
+- Park won't run the code until you've given it at least two distinct examples.
+  This is an authoring requirement. Run `park test` to check whether the code
+  agrees with those answers; `park run` doesn't run the tests for you.
 
 ## Why use it?
 

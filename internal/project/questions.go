@@ -17,7 +17,8 @@ const QuestionsFile = "questions.txt"
 const questionsHeader = `# Questions: calls Park could not answer.
 # Answer each one with an example, e.g.
 #   park example add 'Process.function(...) == answer'
-# or by implementing the function. Answered questions are removed automatically.
+# or by implementing the function with at least two distinct examples.
+# Answered questions are removed automatically.
 `
 
 // Question is one unanswered call.
@@ -48,15 +49,15 @@ func CallText(qualified string, f *Function, input map[string]any) string {
 	return qualified + "(" + strings.Join(args, ", ") + ")"
 }
 
-// Answered reports whether the project can now answer the question: it has an
-// example for the call, or the function has an implementation.
+// Answered reports whether the call has an example or its body is ready to run.
+// This does not evaluate the body or verify its result or dependencies.
 func (p *Project) Answered(q Question) bool {
 	_, f, err := p.Function(q.Function)
 	if err != nil {
 		return false
 	}
 	_, known := f.Index[samples.Key(q.Input)]
-	return known || f.Implemented
+	return known || f.Ready()
 }
 
 // LoadQuestions reads the queue. Lines that no longer name a valid call (for

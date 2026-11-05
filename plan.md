@@ -27,7 +27,8 @@ defines the implementation contract:
   Include the first two and last two examples for each function, without
   duplicates.
 - Queue each unresolved call in `questions.txt` as a question for the user,
-  answered by adding an example or implementing the function. Show open
+  answered by an exact example or an implementation with at least two distinct
+  examples. Show open
   questions at the top of `park.html` and in `park list`. Questions are local
   files for now; a later version moves them, with examples, to a database
   behind a REST API. Synthesis, nested processes, and remote services are
@@ -161,6 +162,10 @@ Show an implemented function with fewer than two distinct examples as
 `needs examples`; prohibit body execution until ready. Known example inputs
 still return their outputs. Removing an example can return a body to that
 state. `park test` fails for unready implementations.
+Readiness is an authoring requirement, not a verification result: `park run`
+does not run the tests or require them to have passed. Implementation checks
+remain strict for every example, including deliberate exceptions to a rule;
+there is no exception annotation or test exemption.
 
 Exit codes:
 
@@ -178,7 +183,7 @@ question is about that innermost call.
   after a fixed comment header. Duplicates are queued once.
 - Every publish (`build`, `example add/remove`, and runs or tests that queue
   questions) reloads the queue against the proposed project, drops questions
-  that now have an example or whose function now has an implementation, and
+  that now have an exact example or whose implementation is ready to run, and
   rewrites the file. An empty queue removes the file.
 - Lines that no longer parse or bind to a function (after a rename, say) are
   dropped with a notice on stderr.
@@ -222,10 +227,13 @@ For each dispatched call:
 1. Bind positional and keyword arguments to the named inputs and validate
    them, then check authored examples.
 2. Check the computed cache for the current execution revision.
-3. If a body exists, require two distinct authored examples, execute with a step
+3. If a body exists and has two distinct authored examples, execute with a step
    limit and cancellation support, validate the result, and cache success.
 4. Otherwise return an unresolved-call error, which the CLI turns into a
-   queued question.
+   queued question. This includes bodies blocked by the two-example requirement.
+   Retain the question until an exact example exists or the body is ready.
+   Pruning questions does not execute bodies or verify their dependencies.
+   Errors while executing ready bodies remain evaluation errors and aren't queued.
 
 Keep a deterministic environment: expose only approved builtins and project
 process namespaces, freeze module globals, and expose no filesystem, network,

@@ -21,7 +21,7 @@ import (
 const MaxFileBytes = 2 << 20
 const MaxProjectBytes = 32 << 20
 const MaxFiles = 2048
-const CodecVersion = "park-v2-codec-2-engine-4"
+const CodecVersion = "park-v2-codec-2-engine-5"
 
 // PlaceholderOutput is the output name of example-only functions, and the
 // conventional name for implementations to return.
@@ -70,11 +70,14 @@ type Function struct {
 	Index             map[string]any // Canonical input -> output.
 }
 
+// Ready reports whether a body may run. It does not imply its tests pass.
+func (f *Function) Ready() bool { return f.Implemented && len(f.Examples) >= 2 }
+
 func (f *Function) State() string {
 	if !f.Implemented {
 		return "example-only"
 	}
-	if len(f.Examples) < 2 {
+	if !f.Ready() {
 		return "needs examples"
 	}
 	return "implemented"

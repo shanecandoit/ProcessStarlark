@@ -81,7 +81,9 @@ every example.
 **Implemented** · v1
 
 An implementation runs only after its function has two or more distinct
-authored examples.
+authored examples. This is an authoring requirement, not a proof of correctness
+or a record of passing tests. `park run` does not run `park test` or require it
+to have passed. Examples remain authoritative even when the body disagrees.
 
 ### D8. One project-wide example set
 **Implemented** · 2026-11-05
@@ -186,21 +188,24 @@ Edits validate the whole proposed project first, then write the edited module
 and then `park.html`, each with an atomic rename. If something fails after the
 module is saved, only the catalog can be stale, and `park build` regenerates it.
 
-- Why: with YAML gone, an edit changes one source file, and the catalog is
-  derived from source. Multi-file recovery protected against a problem that no
-  longer exists, at the cost of ~200 lines, a `.park/` folder, and
-  "unfinished mutation" errors.
+- Why: an example edit changes one source file, and the catalog is derived
+  from source. Atomic file replacement and rebuilding derived files are enough
+  for the current local tool. Locks and recovery journals are out of scope.
 - Cost: two `park` commands editing the same project at the same moment are not
   serialized; the later write wins. Acceptable for a local, single-user tool.
 
 ### D16. Unanswered calls become queued questions
 **Implemented** · 2026-11-05, supersedes `park run --interactive`
 
-When no example or implementation answers a call, Park adds it to
+When a call has no matching example and no ready implementation, Park adds it to
 `questions.txt` and prints the `park example add` command that answers it. Open
 questions appear at the top of `park.html` and `park list`. A question is
-answered by an example for that call or by implementing the function, and is
-then removed automatically. `park test` queues its misses too.
+answered by an example for that call or by an implementation with at least two
+distinct examples, and is then removed automatically. A body with fewer examples
+leaves the question open, and calls blocked by that requirement are queued too.
+Removing a question because a body is ready does not execute or verify the body
+or its dependencies. `park test` queues dependency misses too. Errors from
+executing ready implementations remain evaluation errors, not questions.
 
 - Why: a queue is plain files, so it's simple to build and to test. Holding the
   terminal open to ask meant stdin handling, cancellation, and a reload-and-retry
@@ -212,15 +217,30 @@ then removed automatically. `park test` queues its misses too.
   queue file is the local stand-in.
 - Cost: answering is a second command rather than typing at a prompt.
 
+### D17. Every example is a strict implementation check
+**Implemented** · 2026-11-05
+
+`park test` checks an implementation against every authored example, including
+deliberate exceptions to a general rule. There is no exception annotation or
+automatic exemption. A matching example still answers a runtime call even if
+the body disagrees; the disagreement fails the implementation check.
+
+- Why: an audit should expose disagreements between examples and code. To pass
+  the tests, the implementation must handle exceptional cases too.
+- Cost: adding an intentional runtime override can make `park test` fail until
+  the implementation is updated. Accepted for the current version.
+
+## Resolved questions
+
+- **Deliberate exceptions — resolved by [D17](#d17-every-example-is-a-strict-implementation-check).**
+  Keep strict checks; no exception annotation in the current version.
+- **Purpose of the two-example rule — clarified in [D7](#d7-two-distinct-examples-before-a-body-runs).**
+  Keep it as an authoring requirement; verification is a separate command.
+
 ## Open questions
 
-- **Deliberate exceptions.** An example that is an intended exception to its
-  function's rule (irregular plurals beside an "add s" rule) works when called
-  but fails `park test`. Should examples be markable as exceptions?
 - **Audience.** The README addresses non-programmers; the docs and CLI assume
   programmers. Pick one.
-- **Purpose of the two-example rule (D7).** Two examples don't validate the code
-  at run time. Is the gate worth keeping?
 - **Examples for undeclared functions.** Currently an example must name a
   declared function (with or without a body), and Park reports an error
   otherwise; declaring one is a one-line `def f(x): pass`. Should examples be
