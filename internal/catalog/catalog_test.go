@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"park/internal/project"
-	"park/internal/samples"
 )
 
 func TestSelectionAndEscaping(t *testing.T) {
@@ -16,7 +15,7 @@ func TestSelectionAndEscaping(t *testing.T) {
 			t.Errorf("%d: got %v want %v", n, got, want)
 		}
 	}
-	f := &project.Function{Name: "f", Signature: "f(in) out", InputLabel: "in", OutputLabel: "out", Description: "<script>alert(1)</script>", Examples: []samples.Pair{{Input: "<b>", Output: "</b>"}}}
+	f := &project.Function{Name: "f", Signature: "f(tag, attribute) markup", Inputs: []string{"tag", "attribute"}, Output: "markup", Description: "<script>alert(1)</script>", Examples: []project.Example{{Input: map[string]any{"tag": "<b>", "attribute": "x"}, Output: "</b>"}}}
 	p := &project.Project{Revision: "revision", Processes: map[string]*project.Process{"P": {Name: "P", Functions: map[string]*project.Function{"f": f}}}}
 	html, err := Render(p)
 	if err != nil {
@@ -25,7 +24,7 @@ func TestSelectionAndEscaping(t *testing.T) {
 	if strings.Contains(string(html), "<script>") || !strings.Contains(string(html), "&lt;script&gt;") {
 		t.Fatal("authored content was not escaped")
 	}
-	if !strings.Contains(string(html), "in:") || !strings.Contains(string(html), "out:") {
-		t.Fatal("example labels missing")
+	if !strings.Contains(string(html), "tag: &#34;&lt;b&gt;&#34;\nattribute: &#34;x&#34;\nmarkup:") {
+		t.Fatal("example inputs missing or not in signature order:\n" + string(html))
 	}
 }

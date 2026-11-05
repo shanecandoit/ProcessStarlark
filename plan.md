@@ -1,177 +1,166 @@
-# Park CLI v1 implementation plan
+# Park CLI implementation plan
 
 ## Outcome and scope
 
-Build a local Go CLI named `park` that registers processes and their exported
-functions, runs pure Starlark implementations, manages examples in YAML files,
-and maintains an offline `park.html` catalog. `docs/reference.md` documents the
-format for users; this document defines the implementation contract, with these
-v1 decisions:
+Build a local Go CLI named `park` that runs pure Starlark functions, keeps a
+project-wide set of authored examples, and maintains an offline `park.html`
+catalog. `docs/reference.md` documents the format for users and
+`docs/design.md` records the decisions and their reasons; this document
+defines the implementation contract:
 
-- Use `go.starlark.net` for function bodies inside one stateless
-  `Process Name { ... }` namespace per `.star` file. A small source adapter
-  handles the optional namespace declaration; regular top-level Starlark remains
-  supported. Keep dependencies, exports, and examples in YAML, with a small
-  declarative signature naming each function's input and output fields.
-- Keep one YAML sidecar beside each `.star` module. It contains registration,
-  descriptions, signatures, and authored examples. Store computed results in
-  `.cache/` as disposable, revisioned canonical JSON records.
-- Require two distinct authored input examples before executing an
-  implementation body. Examples for dependencies count toward the dependency
-  function only.
-- Regenerate `park.html` after CLI changes to processes, functions, or examples.
+- Use `go.starlark.net` for function bodies inside one stateless, indented
+  `Process Name:` namespace per `.star` file. A small source adapter handles the
+  namespace declaration and `example:` lines; regular top-level Starlark
+  modules remain supported.
+- Keep everything about a process in its `.star` file. Signatures come from
+  code: inputs from `def` parameters, the output from the variable every
+  `return` returns. Descriptions come from docstrings, dependencies from
+  references to other processes, and examples from `example:` lines. There are
+  no sidecar files.
+- Treat all examples as one project-wide set. An example may be written in any
+  module and name any declared function.
+- Store computed results in `.cache/` as disposable, revisioned canonical JSON
+  records.
+- Require two distinct authored examples before executing an implementation
+  body. Examples count toward the function they name, wherever they are written.
+- Regenerate `park.html` after CLI changes to examples, and on `park build`.
   Include the first two and last two examples for each function, without
   duplicates.
-- Support an interactive prompt for an unknown call to an example-only function.
-  Entering an implementation means editing a `.star` file and rerunning; an
-  inline code editor, synthesis, nested processes, remote services, and a full
-  custom language parser are outside v1. Processes are stateless namespaces
-  for organizing functions, like classes with just a name and functions,
-  without class features or shared state.
+- Support an interactive prompt for an unresolved call. Writing an
+  implementation means editing a `.star` file and rerunning; an inline code
+  editor, synthesis, nested processes, and remote services are outside this
+  version.
 
-An initial v1 CLI is implemented in `cmd/park`. Keep the README's status and
-quick start, and `docs/reference.md`'s usage details, current. The acceptance checks below describe the expected v1
-behavior and should remain covered as the tool evolves.
+The CLI is implemented in `cmd/park`. Keep the README's status and quick start,
+and `docs/reference.md`'s usage details, current. The acceptance checks below
+describe the expected behavior and should remain covered as the tool evolves.
 
 ## Project format
 
-The repository contains `cmd/park` and internal CLI, project, engine, samples,
-and catalog packages. Ship a copyable flat project in `fixtures/roman/`:
+The repository contains `cmd/park` and internal `cli`, `project`, `source`,
+`engine`, `samples`, and `catalog` packages. Ship a copyable flat project in
+`fixtures/roman/`:
 
 ```text
 roman_parse.star
-roman_parse.yaml
 roman_add.star
-roman_add.yaml
 .cache/             # Disposable computed results, canonical JSON
 .park/              # Project lock and recovery journal
 park.html           # Generated offline catalog
 ```
 
-Use one YAML sidecar per process. All modules and sidecars live directly in the
-project root. `roman_parse.yaml` combines registration and examples:
+All modules live directly in the project root. `roman_parse.star`:
 
-```yaml
-version: 1
-name: RomanParse
-description: Convert Roman numerals to integers.
-module: roman_parse.star
-uses: []
-functions:
-  - function: parse(in) out
-    description: Parse a lowercase Roman numeral.
-    implementation: parse
-    examples:
-      - {in: "ix", out: 9}
-      - {in: "vi", out: 6}
-  - function: tokenize(tx) res
-    description: An example-only token vocabulary.
-    examples:
-      - {tx: "ix + vi", res: ["ix", "+", "vi"]}
-      - {tx: "vi + ix", res: ["vi", "+", "ix"]}
+```python
+Process RomanParse:
+    """Convert lowercase Roman numerals using i, v, and x."""
+
+    example: parse("ix") == 9
+    example: parse("vi") == 6
+    example: tokenize("ix + vi") == ["ix", "+", "vi"]
+    example: tokenize("vi + ix") == ["vi", "+", "ix"]
+
+    def parse(text):
+        """Parse a numeral; this small fixture does not validate Roman grammar."""
+        digits = {"i": 1, "v": 5, "x": 10}
+        value = 0
+        previous = 0
+        for index in range(len(text) - 1, -1, -1):
+            digit = digits[text[index]]
+            value += -digit if digit < previous else digit
+            previous = digit
+        return value
+
+    def tokenize(text):
+        """An example-only token vocabulary for teaching calls."""
+        pass
 ```
 
-The module path is relative to the sidecar and has the same basename. An
-example-only process may omit `module`; an example-only function omits
-`implementation`. Every function entry requires a signature and an `examples`
-list, even if initially empty. Function descriptions live in their own entries.
+The Roman fixture handles only lowercase `i`, `v`, and `x` and does not
+validate Roman grammar. `roman_add.star` also carries
+`example: RomanParse.parse("xii") == 12`, which counts toward `RomanParse.parse`.
 
-Signatures have the restricted form `name(input_label) output_label`: one input
-and one output, distinct identifier labels, and no types or expressions. Each
-example contains exactly those two fields. Labels are data names and need not
-match implementation parameters: `parse(in) out` calls `def parse(text)` with
-one positional value. Objects and lists are passed whole, never expanded into
-arguments. Explicit null differs from an omitted field. There are no example
-IDs; fully qualified function plus canonical input identifies a pair.
+### Modules and Process blocks
 
-Use compact YAML rows for short pairs and block formatting for larger values.
-The following list item belongs under `functions` in a sidecar:
+- `Process Name:` sits at column 1 on the first significant line, and the rest
+  of the file is its indented body. The body permits a docstring, `example:`
+  lines, and function definitions; no shared state or nested Process blocks.
+- A module without `Process` is a regular Starlark module. Its process name
+  comes from its file name (`roman_parse.star` is `RomanParse`). It may also
+  define literal constants.
+- The adapter rewrites `example:` to a reserved assignment and the header to a
+  temporary `def`, parses with Starlark, lifts the body to module scope, and
+  removes example statements. Line numbers are preserved. An `example:` line
+  inside a function or a string is an error.
+- Two modules declaring the same process name are an error.
 
-```yaml
-- function: add(request) response
-  examples:
-    - request:
-        left: 9
-        right: 6
-      response:
-        sum: 15
-```
+### Signatures
 
-Keep YAML for authoring; JSONL import/export is outside v1. The Roman fixture
-handles only lowercase `i`, `v`, and `x` and does not validate Roman grammar.
+- Public functions (names not starting with `_`) are exported.
+- Inputs are the parameters, in order: plain identifiers, at least one, with no
+  defaults, `*args`, or `**kwargs`. Names are identifiers and not keywords.
+- An implemented function's every `return` is `return <name>` with one shared
+  name, which is the output name. A bare `return`, a returned expression, two
+  different names, or no `return` at all is an error. Returns inside nested
+  `def`s and lambdas are ignored.
+- A body of only `pass` and/or a docstring declares an example-only function,
+  whose output is named `result`.
+- The output name must differ from every input name. The signature is written
+  `name(input, ...) output`.
 
-### Registration and discovery
+### Examples
 
-`park register FILE.star` generates or refreshes the matching sidecar:
+- `example: call == value`, where the call is `f(...)` for a function in the
+  same process or `Process.f(...)` for any other, and all arguments and the
+  value are Starlark literals: None, booleans, signed 64-bit integers, strings,
+  lists, tuples (stored as lists), and dicts with string keys.
+- Positional arguments bind in signature order; named arguments bind by name.
+  Missing, unknown, and repeated inputs are errors.
+- An example must name a declared function. Duplicate calls are errors across
+  the whole project, reported with both locations.
+- A function's examples are ordered with those in its own module first, then
+  those written in other modules, each in file and line order.
 
-- Register public functions in the Process block. Names beginning with `_` are
-  private.
-- Use the declared Process name, matching any existing registration or `--name`.
-  For regular modules, default `roman_parse.star` to `RomanParse`; allow `--name`.
-- Give new exports `name(in) out` signatures and empty example lists.
-- Read module and function docstrings as descriptions.
-- Detect references to already registered process namespaces. Register
-  dependencies first; accept explicit additions through `--uses A,B`.
-- Preserve authored examples, signatures, example order, comments, and
-  example-only entries when refreshing metadata.
-- When a registered implementation disappears from source, retain its entry and
-  examples as an example-only function. Do not silently discard authored data.
-- Require exactly one positional parameter for each implementation, without
-  defaults, variadic parameters, or keyword arguments.
+### Discovery and validation
 
-Manually registered exports are also supported. Only registered functions are
-public. Calls between exports, including within one process, use dispatch
-wrappers; private helpers are ordinary Starlark functions.
+Use only the current directory, checking for `.park/` or `.star` modules without
+searching parent directories. `--root PATH` explicitly selects the project
+root. `park init [DIR]` creates an empty catalog and internal project state
+without overwriting generated project state. `park build` validates the
+project and regenerates HTML.
 
-Use only the current directory, checking for `.park/`, `.star` modules, or YAML
-sidecars without searching parent directories. `--root PATH` explicitly selects
-the project root. An initial `register` can start in the current directory.
-`park init [DIR]` creates
-an empty catalog and internal project state without overwriting existing
-sidecars or generated project state. `park build` validates registered data and
-regenerates HTML; it never automatically re-registers removed exports.
-
-Validate unknown fields, duplicate YAML keys/processes/functions, signatures,
-missing references, duplicate inputs, and dependency cycles. Restrict process
-and function names to safe identifiers. Keep referenced files inside the root;
-reject symlinked source and sidecar files. Preserve comments and example row
-flow/block style during edits.
+Validate module syntax, Process structure, signatures, example calls, duplicate
+processes, functions, and examples, references to unknown functions, and
+dependency cycles. Restrict process and function names to safe identifiers.
+Keep files inside the root and reject symlinked modules.
 
 ## CLI contract
 
 Use Go's standard `flag` package. Global `--root PATH` precedes the command;
-command flags precede positional operands. Value flags contain one JSON value.
-Errors and prompts go to stderr; a successful run prints one JSON output.
+command flags precede positional operands. Calls are one Starlark expression
+with literal arguments, parsed by Starlark's expression parser. Errors and
+prompts go to stderr; a successful run prints one output as a Starlark literal.
 
 - `park init [DIR]`: create an empty project and catalog.
-- `park register roman_parse.star`: generate or refresh a module's sidecar.
-  Optional flags: `--name RomanParse` and `--uses OtherProcess`.
-- `park process add --name Names`: register an empty example-only process.
-  Optional `--module file.star` associates source; use `register` to generate
-  exports from it. Both commands accept existing source in the project root.
-- `park process remove Names`: remove its sidecar and examples. Refuse while
-  another process uses it, and leave Starlark source intact.
-- `park function add --signature 'parse(in) out' RomanParse.parse`: append an
-  empty example-only function entry. Add `--implementation parse` for a body.
-- `park function remove RomanParse.parse`: remove the entry and its examples,
-  leaving source intact.
-- `park example add --input '"ix"' --output '9' RomanParse.parse`: append a
-  validated pair under the function's declared labels.
-- `park example remove --input '"ix"' RomanParse.parse`: remove by canonical
-  input, without an example ID.
 - `park list`: list processes, functions, readiness, and example counts.
-- `park run --input '"ix"' RomanParse.parse`: look up or compute one output.
-- `park run --interactive --input '"iv + i"' RomanParse.tokenize`: prompt for an
-  output if the example-only call is unresolved and stdin is a terminal.
-- `park test [Process.function]`: check authored outputs against
-  implementations.
-- `park build`: validate registered files and regenerate `park.html`.
+- `park run 'RomanParse.parse("ix")'`: look up or compute one output.
+- `park run --interactive 'RomanParse.tokenize("iv + i")'`: prompt for an
+  output literal if the call is unresolved and stdin is a terminal, then save
+  it as an example.
+- `park example add 'RomanParse.parse("xiv") == 14'`: add an example line to
+  the target function's own module, after that module's last example (else
+  after the process docstring, the Process header, or at the top of the file).
+  Examples are written positionally in signature order.
+- `park example remove 'RomanParse.parse("xiv")'`: delete that example's lines
+  wherever they are written.
+- `park test [Process.function]`: check examples against implementations,
+  reporting each failure's call and source location.
+- `park build`: validate the project and regenerate `park.html`.
 
-Permit registration before adding examples. Show an implemented function with
-fewer than two distinct authored inputs as `needs examples`; prohibit body
-execution until ready. Known authored inputs can still return their outputs.
-Removing an example can return a body to that state. Structural validation still
-rejects malformed data; `park test` fails for unready implementations.
+Show an implemented function with fewer than two distinct examples as
+`needs examples`; prohibit body execution until ready. Known example inputs
+still return their outputs. Removing an example can return a body to that
+state. `park test` fails for unready implementations.
 
 Exit codes:
 
@@ -181,35 +170,35 @@ Exit codes:
 - `3`: unresolved call.
 
 Prompt only with `--interactive` and a terminal. Report the exact unresolved
-function and input, including misses inside dependencies.
+call, including misses inside dependencies.
 
 ## Values, example database, and cache
 
 1. Support null/None, booleans, strings, signed 64-bit integers, lists, and
-   string-keyed maps recursively. Reject floats, timestamps, custom YAML tags,
-   aliases, non-string map keys, and out-of-range integers with a useful
-   location. Keep JSON numbers exact rather than decoding them through float64.
+   string-keyed maps recursively. Reject floats, non-string map keys, and
+   out-of-range integers with a useful source location. Keep JSON numbers exact rather than decoding them through float64.
 2. Define canonical JSON with recursively sorted map keys, preserved list order,
    normalized integer encoding, and consistent string escaping. Canonicalize the
-   input value directly, without an argument-array wrapper. Validate that each
-   dispatched call supplies exactly one argument before lookup.
+   object of named inputs, so argument order and calling style never change a
+   key. Validate that each dispatched call supplies every declared input exactly
+   once, and nothing else, before lookup.
 3. Index authored examples by fully qualified function plus canonical input.
-   Reject duplicate inputs regardless of YAML presentation; conflicting outputs
+   Reject duplicate inputs regardless of how the call is written; conflicting outputs
    must never silently replace an existing expectation. Remove then add to
    change one.
-4. Keep authored expectations separate from computed cache entries. YAML always
-   wins. Computed evaluations do not count toward the two-example requirement
+4. Keep authored expectations separate from computed cache entries. Authored
+   examples always win. Computed evaluations do not count toward the two-example requirement
    and do not appear among the catalog's authored examples.
 5. Cache each successful body evaluation in an immutable JSON file keyed by a
    hash of the function, canonical input, and an execution revision. Include a
    schema version and provenance in the record. Reject a conflicting output for
    an existing key; never cache failures or unresolved calls.
-6. Use a conservative project-wide execution revision: hash sorted sidecars,
-   Starlark sources, and an engine/codec version. This invalidates old results
+6. Use a conservative project-wide execution revision: hash sorted Starlark
+   sources and an engine/codec version. This invalidates old results
    when code, dependencies, examples, or runtime semantics change. Old revision
    files may remain unused; cache deletion is always safe.
 
-Use canonical JSON files for v1 rather than SQLite: the authored sidecar set is
+Use canonical JSON files rather than SQLite: the authored example set is
 small, indexes can be rebuilt in memory, and no schema migration service is
 needed.
 
@@ -217,28 +206,30 @@ needed.
 
 For each dispatched call:
 
-1. Bind and validate the single input value, then check authored examples.
+1. Bind positional and keyword arguments to the named inputs and validate
+   them, then check authored examples.
 2. Check the computed cache for the current execution revision.
 3. If a body exists, require two distinct authored examples, execute with a step
    limit and cancellation support, validate the result, and cache success.
 4. Otherwise return an unresolved-call error. In interactive mode, prompt for a
-   JSON output, persist the input/output pair through the same example-add path,
+   literal output, persist it through the same example-add path,
    and retry the top-level call under a fresh project snapshot/revision. Do not
    mix results from before and after that edit. EOF or cancellation makes no
    change.
 
-Keep a deterministic environment: expose only approved builtins and registered
+Keep a deterministic environment: expose only approved builtins and project
 process namespaces, freeze module globals, and expose no filesystem, network,
-environment, clock, or randomness APIs. Disallow native `load()` in v1;
-dependencies come from manifests. Validate/inspect function definitions before
+environment, clock, or randomness APIs. Disallow native `load()`;
+dependencies come from `Process.function` references. Validate/inspect function definitions before
 executing module initialization and ensure initialization cannot call exported
-process functions. Permit a module docstring, function definitions, and literal
-constants at the top level. Namespace bindings come from the host. Set explicit
+process functions. Permit a module docstring, function definitions, and (in
+regular modules) literal constants at the top level. Example-only declarations
+are removed before compilation so their names dispatch to examples. Namespace bindings come from the host. Set explicit
 step, input-size, and project-size limits:
 
 - 1 MiB per canonical input or output; value nesting at most 64 levels.
-- 2 MiB per source or sidecar; 32 MiB of registered project data.
-- 2,048 registered files and 32 MiB of generated HTML.
+- 2 MiB per module; 32 MiB of project source.
+- 2,048 modules and 32 MiB of generated HTML.
 - 1,000,000 Starlark steps and 128 dispatched body calls in the call stack.
 - A five-second deadline per top-level evaluation or test example.
 
@@ -255,12 +246,12 @@ without prompting.
 Render a complete static page using Go `html/template`, with inline CSS and no
 server or external assets. Include:
 
-- A process index, descriptions, declared dependencies, and function anchors.
-- Every registered function's input/output signature, description, source path,
+- A process index, descriptions, dependencies, and function anchors.
+- Every function's signature, description, source path,
   implementation/example-only/needs-examples state, and authored example count.
-- Each function's first two and last two authored examples in the function's
-  YAML list order, showing JSON input and expected output under their declared
-  labels. Deduplicate overlapping rows: counts 0–4 show all examples, and counts
+- Each function's first two and last two authored examples in example order,
+  showing each named input and the expected output as Starlark literals under
+  their names. Deduplicate overlapping rows: counts 0–4 show all examples, and counts
   5+ show four plus an omitted-count label.
 - A project content revision so the page can be compared with source state.
 
@@ -268,8 +259,7 @@ Sort processes and functions by name; use example list order for first/last
 selection. Escape all authored content. Avoid generated timestamps so unchanged
 inputs produce byte-identical HTML.
 
-All successful process/function/example additions and removals regenerate the
-full catalog from the proposed project state. `park build` handles external file
+All successful example additions and removals regenerate the full catalog from the proposed project state. `park build` handles external file
 edits; there is no watcher in v1. Runtime cache writes alone do not regenerate
 the page.
 
@@ -283,46 +273,34 @@ explicitly. Never print success while known source/catalog inconsistency
 remains. Read-only commands refuse an unfinished mutation with a recovery
 instruction. Generated HTML is never an input database.
 
-Process/function removal leaves `.star` files in place and invalidates caches by
-revision; it removes only the relevant sidecar or function entry, including its
-examples.
+## Acceptance checks
 
-## Implementation sequence and acceptance checks
+- **Loading:** malformed Process blocks, signatures, return statements,
+  example lines, unknown functions, duplicate examples (within and across
+  files), duplicate processes, and dependency cycles produce actionable errors
+  with no writes.
+- **Examples:** positional and named calls share one key; map order doesn't
+  matter; integers round-trip exactly; examples written in another module count
+  toward the named function; source edits invalidate the cache.
+- **Engine:** cache hits and misses, two-example gating, same-process and
+  dependency calls, named inputs passed to bodies in order, example-only
+  dispatch, and a deliberately incorrect implementation failing `park test`.
+- **Catalog and edits:** example add/remove is reflected in source and HTML,
+  add then remove restores the module byte for byte, comments survive,
+  first/last selection for counts 0–6, escaped content, deterministic output,
+  manual edits plus `build`, and interrupted-write recovery.
+- **CLI:** call parsing and literal typing, exit codes, an unseen input
+  executing a body, a second run using the cache, and an unresolved call
+  exiting in unattended mode or saving an answer interactively, including for a
+  dependency.
+- **Release check:** keep the README quick start working; run `gofmt`,
+  `go vet ./...`, and `go test ./...`; build `./cmd/park` and exercise a
+  temporary project from init through example edits, run, test, and rebuild.
 
-1. **Project skeleton and loader.** Initialize the Go module, command entry
-   point, typed schemas, root discovery, strict YAML parsing, and dependency
-   validation. Add the RomanParse fixture and an example-only function. Verify
-   malformed schemas, signatures, row fields, and references produce actionable
-   errors with no writes.
-2. **Example database.** Implement value conversion, canonical keys, sidecar
-   add/remove, in-memory indexes, and revisioned JSON cache storage. Verify
-   duplicate input rejection, exact integer round trips, map-order independence,
-   and invalidation after source, example, and dependency edits.
-3. **Starlark engine.** Add exports, dependency namespaces, dispatch wrappers,
-   purity restrictions, limits, unresolved-call handling, and body verification.
-   Verify cache hits, cache misses, two-example gating, internal/dependency
-   calls, and a deliberately incorrect implementation failing `park test`
-   despite examples.
-4. **Catalog and mutation publication.** Build the template, process/function
-   CRUD, full regeneration, lock, and interrupted-write recovery. Verify
-   add/remove is reflected in HTML, first/last selection for counts 0–6, escaped
-   content, deterministic output, manual edits plus `build`, and failure
-   recovery.
-5. **End-to-end CLI.** Wire commands, JSON I/O, exit codes, and opt-in prompts.
-   Add RomanAdd with two self-examples and a dependency on RomanParse. Verify an
-   unseen input executes the body, a second run uses the cache, and an unknown
-   example-only call exits in unattended mode or saves an answer interactively.
-6. **Documentation and release check.** Keep the README's quick-start
-   commands working. Update `docs/reference.md` with commands, formats,
-   supported values, catalog refresh behavior, and deferred syntax. Run
-   `gofmt`, `go vet ./...`, and `go test ./...`; build `./cmd/park` and exercise
-   a temporary project from init through additions, run, test, removals, and
-   rebuild.
-
-Done means a user can create a project, register a process and function, add two
-YAML examples, execute or teach a call, and open an accurate `park.html` after
-each CLI edit. Removing examples/functions/processes and manually rebuilding
-must leave the example database and catalog consistent.
+Done means a user can write a `.star` module, add examples from the CLI or by
+hand, execute or teach a call, and open an accurate `park.html` after each CLI
+edit. Removing examples and manually rebuilding must leave the example set and
+catalog consistent.
 
 ## V2 direction: bounded call cache
 
@@ -333,14 +311,14 @@ Extend caching with a bounded sample of each function's runtime calls:
 - Store retained calls as canonical JSON input/output records, with function,
   execution revision, and call order. Store a call shared by both windows once.
 - Include successful authored-example hits, computed-cache hits, and body
-  evaluations. These are runtime calls, not positions in the YAML example list.
+  evaluations. These are runtime calls, not authored examples.
 - Keep revision provenance so stale outputs cannot satisfy current lookups. Test
   runs continue to avoid persistent cache writes.
-- Keep authored YAML authoritative. Retained calls do not become authored
+- Keep authored examples authoritative. Retained calls do not become authored
   examples or count toward the two-example requirement.
 - Decide window sizes, repeated-call accounting, revision retention, and any
-  catalog display during v2 design. This is outside v1's acceptance criteria; v1
-  keeps its revisioned computed-result cache and authored-example catalog.
+  catalog display during v2 design. This is outside the current acceptance
+  criteria.
 
 ## Dependency references
 
@@ -349,5 +327,5 @@ Dependencies are pinned in `go.mod`/`go.sum`:
 - [Starlark in Go](https://github.com/google/starlark-go): embedded interpreter.
 - [Starlark API](https://pkg.go.dev/go.starlark.net/starlark): evaluation,
   freezing, execution limits, and cancellation interfaces.
-- [Go YAML v3](https://pkg.go.dev/go.yaml.in/yaml/v3): typed decoding, strict
-  field checks, and node-based edits to retain YAML presentation.
+- [Starlark syntax](https://pkg.go.dev/go.starlark.net/syntax): parsing modules,
+  example lines, and CLI call expressions.

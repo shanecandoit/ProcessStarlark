@@ -26,20 +26,6 @@ func TestCanonicalJSON(t *testing.T) {
 		}
 	}
 }
-func TestYAMLValidation(t *testing.T) {
-	for _, input := range []string{"a: 1\na: 2\n", "a: &x 1\nb: *x\n", "a: 2026-11-05\n", "a: !custom value\n", "1: value\n", "a: 1.5\n", "a: 1\n---\nb: 2\n"} {
-		if _, err := ParseYAML([]byte(input)); err == nil {
-			t.Errorf("accepted invalid YAML %q", input)
-		}
-	}
-	n, err := ParseYAML([]byte("x: 9223372036854775808\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := YAMLValue(n.Content[0]); err == nil {
-		t.Fatal("accepted overflowing YAML integer")
-	}
-}
 func TestImmutableCache(t *testing.T) {
 	dir := t.TempDir()
 	input := map[string]any{"value": int64(4)}

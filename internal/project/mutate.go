@@ -9,9 +9,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"go.yaml.in/yaml/v3"
 	"golang.org/x/sys/unix"
 	"park/internal/samples"
+	"strings"
 )
 
 // Lock serializes edits and gives readers a coherent project snapshot.
@@ -175,10 +175,10 @@ func managedPath(rel string) bool {
 	if rel != filepath.Clean(rel) {
 		return false
 	}
-	return rel == "park.html" || (filepath.Dir(rel) == "." && (filepath.Ext(rel) == ".yaml" || filepath.Ext(rel) == ".yml"))
+	return rel == "park.html" || (filepath.Dir(rel) == "." && filepath.Ext(rel) == ".star")
 }
 
-// Publish journals all source/catalog edits before atomically replacing each file.
+// Publish journals all module/catalog edits before atomically replacing each file.
 func Publish(root string, edits map[string][]byte) error {
 	j := journal{Version: 1, Before: map[string][]byte{}, After: edits}
 	for rel, b := range edits {
@@ -233,71 +233,70 @@ func Publish(root string, edits map[string][]byte) error {
 	return AtomicWrite(root, journalPath, nil)
 }
 
-func Field(n *yaml.Node, key string) *yaml.Node {
-	if n.Kind == yaml.DocumentNode {
-		n = n.Content[0]
+// ExampleLine renders an example as written in the target function's own
+// module, with positional arguments in signature order.
+func ExampleLine(f *Function, input map[string]any, output any) string {
+	args := make([]string, len(f.Inputs))
+	for i, name := range f.Inputs {
+		args[i] = samples.Literal(input[name])
 	}
-	for i := 0; i < len(n.Content); i += 2 {
-		if n.Content[i].Value == key {
-			return n.Content[i+1]
-		}
-	}
-	return nil
+	return "example: " + f.Name + "(" + strings.Join(args, ", ") + ") == " + samples.Literal(output)
 }
-func SetField(n *yaml.Node, key string, value *yaml.Node) {
-	if n.Kind == yaml.DocumentNode {
-		n = n.Content[0]
+
+// AddExample writes a new example line into the function's own module: after
+// the module's last example, else after the process docstring or header, else
+// at the top of the file. It returns the module path and its new contents.
+func AddExample(p *Project, qualified string, raw map[string]any, output any) (string, []byte, error) {
+	proc, f, err := p.Function(qualified)
+	if err != nil {
+		return "", nil, err
 	}
-	for i := 0; i < len(n.Content); i += 2 {
-		if n.Content[i].Value == key {
-			previous := n.Content[i+1]
-			value.HeadComment = previous.HeadComment
-			value.LineComment = previous.LineComment
-			value.FootComment = previous.FootComment
-			n.Content[i+1] = value
-			return
-		}
+	input, err := f.BindInput(raw)
+	if err != nil {
+		return "", nil, err
 	}
-	n.Content = append(n.Content, samples.ValueNode(key), value)
-}
-func RemoveField(n *yaml.Node, key string) {
-	if n.Kind == yaml.DocumentNode {
-		n = n.Content[0]
+	if _, err := samples.Canonical(output); err != nil {
+		return "", nil, err
 	}
-	for i := 0; i < len(n.Content); i += 2 {
-		if n.Content[i].Value == key {
-			n.Content = append(n.Content[:i], n.Content[i+2:]...)
-			return
-		}
-	}
-}
-func AddExample(f *Function, input, output any) ([]byte, error) {
 	if _, ok := f.Index[samples.Key(input)]; ok {
-		return nil, fmt.Errorf("duplicate input %s", samples.Key(input))
+		return "", nil, fmt.Errorf("duplicate example for %s", FormatCall(qualified, f.Inputs, input))
 	}
-	row := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map", Style: yaml.FlowStyle}
-	// Follow nearby authored formatting when appending a pair.
-	seq := Field(f.Node, "examples")
-	if len(seq.Content) > 0 {
-		row.Style = seq.Content[len(seq.Content)-1].Style
+	path := f.Path
+	lines := strings.Split(string(p.Files[path]), "\n")
+	text := proc.Indent + ExampleLine(f, input, output)
+	var insert []string
+	at := 0
+	switch {
+	case proc.ExampleEnd > 0:
+		at, insert = proc.ExampleEnd, []string{text}
+	case proc.DocEnd > 0:
+		at, insert = proc.DocEnd, []string{"", text}
+	case proc.Header > 0:
+		at, insert = proc.Header, []string{text, ""}
+	default:
+		at, insert = 0, []string{text, ""}
 	}
-	row.Content = []*yaml.Node{samples.ValueNode(f.InputLabel), samples.ValueNode(input), samples.ValueNode(f.OutputLabel), samples.ValueNode(output)}
-	if row.Style&yaml.FlowStyle != 0 {
-		for _, n := range row.Content {
-			n.Style |= yaml.FlowStyle
-		}
-	}
-	seq.Content = append(seq.Content, row)
-	return samples.EncodeYAML(f.Document)
+	lines = append(lines[:at], append(insert, lines[at:]...)...)
+	return path, []byte(strings.Join(lines, "\n")), nil
 }
-func RemoveExample(f *Function, input any) ([]byte, error) {
+
+// RemoveExample deletes the lines of the example for input, wherever it was written.
+func RemoveExample(p *Project, qualified string, raw map[string]any) (string, []byte, error) {
+	_, f, err := p.Function(qualified)
+	if err != nil {
+		return "", nil, err
+	}
+	input, err := f.BindInput(raw)
+	if err != nil {
+		return "", nil, err
+	}
 	key := samples.Key(input)
-	seq := Field(f.Node, "examples")
-	for i, pair := range f.Examples {
-		if samples.Key(pair.Input) == key {
-			seq.Content = append(seq.Content[:i], seq.Content[i+1:]...)
-			return samples.EncodeYAML(f.Document)
+	for _, ex := range f.Examples {
+		if samples.Key(ex.Input) == key {
+			lines := strings.Split(string(p.Files[ex.Path]), "\n")
+			lines = append(lines[:ex.Line-1], lines[ex.EndLine:]...)
+			return ex.Path, []byte(strings.Join(lines, "\n")), nil
 		}
 	}
-	return nil, fmt.Errorf("no authored example for input %s", key)
+	return "", nil, fmt.Errorf("no authored example for %s", FormatCall(qualified, f.Inputs, input))
 }

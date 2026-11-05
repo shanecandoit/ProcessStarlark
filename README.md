@@ -10,49 +10,59 @@ inputs you didn't list.
 
 ## How it works: Roman numerals
 
-**1. Write down answers you know.** Each example pairs a Roman numeral with its
-value:
+**1. Write down answers you know.** Each example is a call and its answer:
 
-```yaml
-- {in: "ix", out: 9}
-- {in: "vi", out: 6}
+```python
+Process RomanParse:
+    example: parse("ix") == 9
+    example: parse("vi") == 6
+
+    def parse(text):
+        pass
 ```
+
+`def parse(text): pass` declares a function with no code yet. Its examples are
+all it knows.
 
 **2. Ask Park a question.** Ask about `ix`, and Park looks up your example and
 answers `9`. Ask about `xiv`, and Park says it doesn't know yet. It never
 guesses.
 
-**3. Teach it a rule.** Write a short function in
+**3. Teach it a rule.** Replace `pass` with code in
 [Starlark](https://github.com/bazelbuild/starlark), a simplified version of
 Python:
 
 ```python
-Process RomanParse {
+Process RomanParse:
+    example: parse("ix") == 9
+    example: parse("vi") == 6
+
     def parse(text):
-        values = {"i": 1, "v": 5, "x": 10}
-        total = 0
+        digits = {"i": 1, "v": 5, "x": 10}
+        value = 0
         previous = 0
-        for index in range(len(text) - 1, -1, -1):   # read right to left
-            value = values[text[index]]
-            total += -value if value < previous else value   # "iv" means 5 - 1
-            previous = value
-        return total
-}
+        for index in range(len(text) - 1, -1, -1):  # read right to left
+            digit = digits[text[index]]
+            value += -digit if digit < previous else digit  # "iv" means 5 - 1
+            previous = digit
+        return value
 ```
 
-`Process RomanParse` is a stateless namespace for organizing functions. Think
-of it as a class with just a name and functions: no class features or shared
-state. Variables belong inside functions, and callers use
-`RomanParse.parse(text)`.
+The names in the code are the names in the examples: `parse` takes `text` and
+returns `value`, so its signature is `parse(text) value`. Every `return` hands
+back a named variable for that reason.
 
-`Process` is an optional extension to Starlark. Regular `.star` files with
-top-level functions work too, with examples and catalog entries supplied by
-their YAML sidecars. Both forms use Park's pure-function runtime.
+`Process RomanParse:` is a stateless namespace for organizing functions. Think
+of it as a class with just a name, functions, and examples: no class features
+or shared state. Callers use `RomanParse.parse("ix")`. Plain `.star` files with
+top-level functions work too; the file name supplies the process name.
 
 Now `xiv` gives `14`. Your examples are still in charge:
 
-- When an input matches an example, Park answers with the example, even after
+- When a call matches an example, Park answers with the example, even after
   the code exists.
+- Examples can be written in any file and name any function. They all go into
+  one project-wide set.
 - `park test` checks that the code gives the same answers as your examples.
 - Park won't run the code until you've given it at least two examples, so a rule
   can't run until you've shown it some correct answers.
@@ -76,21 +86,23 @@ folder, run:
 go build -o park ./cmd/park
 ./park build                                          # generate park.html
 ./park test                                           # code vs. examples
-./park run --input '"ix"' RomanParse.parse              # 9, from an example
-./park run --input '"xiv"' RomanParse.parse             # 14, from the code
-./park run --input '"ix + vi"' RomanAdd.eval            # 15, from an example
-./park run --input '"iv + i"' RomanAdd.eval             # 5, from the code
+./park run 'RomanParse.parse("ix")'                   # 9, from an example
+./park run 'RomanParse.parse("xiv")'                  # 14, from the code
+./park run 'RomanAdd.eval("ix + vi")'                 # 15, from an example
+./park run 'RomanAdd.eval("iv + i")'                  # 5, from the code
 ```
 
 Then open `park.html` in this folder to see every function and its examples.
-The root Roman demo includes two examples for each implementation. A separate
-copy in `fixtures/roman/` is available for tests and experimentation; select it
-with `--root fixtures/roman` before the command.
+The root Roman demo is two files, `roman_parse.star` and `roman_add.star`, each
+holding its code and examples. A separate copy in `fixtures/roman/` is
+available for tests and experimentation; select it with `--root fixtures/roman`
+before the command.
 
 ## Learn more
 
 - [Why Park?](docs/why-park.md): how Park compares with other languages.
 - [Reference](docs/reference.md): file formats, commands, and the exact rules.
+- [Design decisions](docs/design.md): what was decided and why.
 - [Sample project ideas](docs/ideas-sample-projs.md) and the
   [implementation plan](plan.md).
 

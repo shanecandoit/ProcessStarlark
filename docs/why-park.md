@@ -57,7 +57,7 @@ Related ideas:
 
 Park isn't a new general-purpose language. It's a small runtime and project
 format that groups [Starlark](https://github.com/bazelbuild/starlark) functions
-in stateless Process namespaces with YAML example files. It suits small, pure,
+in stateless Process namespaces, with examples written beside the code. It suits small, pure,
 rule-like functions that people need to read, check, and extend by adding cases.
 It isn't meant for I/O, large programs, or performance-critical code.
 

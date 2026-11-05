@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
-	"path/filepath"
 
 	"park/internal/project"
 	"park/internal/samples"
@@ -24,11 +23,15 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 
 func (b *limitedBuffer) WriteString(s string) (int, error) { return b.Write([]byte(s)) }
 
-type Row struct{ Input, Output string }
+type Field struct{ Name, Value string }
+type Row struct {
+	Inputs []Field
+	Output string
+}
 type Function struct {
-	Anchor, Name, Signature, Description, State, Source, InputLabel, OutputLabel string
-	Count, Omitted                                                               int
-	Rows                                                                         []Row
+	Anchor, Name, Signature, Description, State, Source, Output string
+	Count, Omitted                                              int
+	Rows                                                        []Row
 }
 type Process struct {
 	Name, Description string
@@ -57,13 +60,17 @@ func Render(p *project.Project) ([]byte, error) {
 		view := Process{Name: name, Description: proc.Description, Uses: proc.Uses}
 		for _, name := range project.Names(proc.Functions) {
 			f := proc.Functions[name]
-			item := Function{Anchor: proc.Name + "." + name, Name: name, Signature: f.Signature, Description: f.Description, State: f.State(), Count: len(f.Examples), InputLabel: f.InputLabel, OutputLabel: f.OutputLabel}
-			if f.Implementation != "" {
-				item.Source = filepath.Clean(filepath.Join(filepath.Dir(proc.ManifestPath), proc.Module))
+			item := Function{Anchor: proc.Name + "." + name, Name: name, Signature: f.Signature, Description: f.Description, State: f.State(), Count: len(f.Examples), Output: f.Output}
+			if f.Implemented {
+				item.Source = f.Path
 			}
 			for _, i := range Selection(len(f.Examples)) {
 				pair := f.Examples[i]
-				item.Rows = append(item.Rows, Row{Input: samples.Key(pair.Input), Output: samples.Key(pair.Output)})
+				row := Row{Output: samples.Literal(pair.Output)}
+				for _, name := range f.Inputs {
+					row.Inputs = append(row.Inputs, Field{Name: name, Value: samples.Literal(pair.Input[name])})
+				}
+				item.Rows = append(item.Rows, row)
 			}
 			item.Omitted = item.Count - len(item.Rows)
 			view.Functions = append(view.Functions, item)
@@ -82,8 +89,8 @@ var pageTemplate = template.Must(template.New("catalog").Parse(`<!doctype html>
 <nav aria-label="Processes"><ul>{{range .Processes}}<li><a href="#{{.Name}}">{{.Name}}</a><ul>{{range .Functions}}<li><a href="#{{.Anchor}}">{{.Signature}}</a></li>{{end}}</ul></li>{{else}}<li>No processes registered.</li>{{end}}</ul></nav>
 <main>{{range .Processes}}<section id="{{.Name}}"><h2>{{.Name}}</h2><p>{{.Description}}</p>{{if .Uses}}<p>Uses: {{range .Uses}}<a href="#{{.}}">{{.}}</a> {{end}}</p>{{end}}
 {{range .Functions}}{{$fn := .}}<article id="{{.Anchor}}"><h3><code>{{.Signature}}</code></h3><p>{{.Description}}</p><p class="meta">{{.State}} · {{.Count}} authored examples{{if .Source}} · <code>{{.Source}}</code>{{end}}</p>
-{{range .Rows}}<div><pre>{{$fn.InputLabel}}: {{.Input}}
-{{$fn.OutputLabel}}: {{.Output}}</pre></div>{{else}}<p>No authored examples.</p>{{end}}
+{{range .Rows}}<div><pre>{{range .Inputs}}{{.Name}}: {{.Value}}
+{{end}}{{$fn.Output}}: {{.Output}}</pre></div>{{else}}<p>No authored examples.</p>{{end}}
 {{if .Omitted}}<p class="meta">{{.Omitted}} examples omitted; showing first two and last two.</p>{{end}}</article>{{end}}</section>{{end}}</main>
 <footer>Project revision: <code>{{.Revision}}</code></footer></body></html>
 `))

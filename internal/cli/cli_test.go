@@ -28,7 +28,7 @@ func fixture(t *testing.T) string {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		if !strings.HasSuffix(entry.Name(), ".yaml") && !strings.HasSuffix(entry.Name(), ".star") {
+		if !strings.HasSuffix(entry.Name(), ".star") {
 			continue
 		}
 		b, err := os.ReadFile(filepath.Join("../../fixtures/roman", entry.Name()))
@@ -76,7 +76,6 @@ func read(t *testing.T, root, path string) string {
 
 func TestDefaultRootStaysInCurrentDirectory(t *testing.T) {
 	parent := fixture(t)
-	write(t, parent, "training.yaml", "learning_rate: 0.0002\n")
 	child := filepath.Join(parent, "child")
 	if err := os.Mkdir(child, 0755); err != nil {
 		t.Fatal(err)
@@ -89,9 +88,6 @@ func TestDefaultRootStaysInCurrentDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(parent, ".park")); !os.IsNotExist(err) {
 		t.Fatalf("default discovery touched parent project state: %v", err)
-	}
-	if err := os.Remove(filepath.Join(parent, "training.yaml")); err != nil {
-		t.Fatal(err)
 	}
 	// A parent project is accessible when explicitly selected.
 	success(t, parent, "test")
@@ -112,13 +108,13 @@ func TestRunCacheAndBodyVerification(t *testing.T) {
 		t.Fatal("build is nondeterministic")
 	}
 	out := success(t, root, "test")
-	if !strings.Contains(out, "4 implementation checks, 2 example-only records, 0 failures") {
+	if !strings.Contains(out, "5 implementation checks, 2 example-only records, 0 failures") {
 		t.Fatal(out)
 	}
 	if len(files(t, root, ".cache")) != 0 {
 		t.Fatal("tests persisted cache results")
 	}
-	if out := success(t, root, "run", "--input", `"iv + i"`, "RomanAdd.eval"); out != "5\n" {
+	if out := success(t, root, "run", `RomanAdd.eval("iv + i")`); out != "5\n" {
 		t.Fatal(out)
 	}
 	entries := files(t, root, ".cache")
@@ -129,132 +125,135 @@ func TestRunCacheAndBodyVerification(t *testing.T) {
 	for _, entry := range entries {
 		cached[entry.Name()] = read(t, root, filepath.Join(".cache", entry.Name()))
 	}
-	success(t, root, "run", "--input", `"iv + i"`, "RomanAdd.eval")
+	success(t, root, "run", `RomanAdd.eval(text="iv + i")`)
 	for name, contents := range cached {
 		if read(t, root, filepath.Join(".cache", name)) != contents {
 			t.Fatal("cache entry changed on hit")
 		}
 	}
+	if len(files(t, root, ".cache")) != 3 {
+		t.Fatal("a named call did not share the positional call's cache entry")
+	}
 	if read(t, root, "park.html") != html {
 		t.Fatal("runtime cache regenerated catalog")
 	}
 	source := read(t, root, "roman_parse.star")
-	write(t, root, "roman_parse.star", strings.Replace(source, "return total", "return 0", 1))
+	write(t, root, "roman_parse.star", strings.Replace(source, "        return value", "        value = 0\n        return value", 1))
 	code, _, err := invoke(t, root, false, "", "test", "RomanParse.parse")
-	if code != 1 || !strings.Contains(err, "expected 9") {
+	if code != 1 || !strings.Contains(err, "expected 9") || !strings.Contains(err, "roman_parse.star:4") {
 		t.Fatalf("bad body escaped test: %d %s", code, err)
 	}
-	if out := success(t, root, "run", "--input", `"iv + i"`, "RomanAdd.eval"); out != "0\n" {
+	if out := success(t, root, "run", `RomanAdd.eval("iv + i")`); out != "0\n" {
 		t.Fatal("code change did not invalidate cached result:", out)
 	}
 }
+
 func TestTeachingAndExampleEdits(t *testing.T) {
 	root := fixture(t)
 	success(t, root, "build")
-	code, out, err := invoke(t, root, false, `["iv","+","i"]`+"\n", "run", "--interactive", "--input", `"iv + i"`, "RomanParse.tokenize")
-	if code != 3 || out != "" || !strings.Contains(err, "unresolved call") {
+	code, out, err := invoke(t, root, false, `["iv", "+", "i"]`+"\n", "run", "--interactive", `RomanParse.tokenize("iv + i")`)
+	if code != 3 || out != "" || !strings.Contains(err, `unresolved call RomanParse.tokenize(text="iv + i")`) {
 		t.Fatalf("unattended call %d %s %s", code, out, err)
 	}
-	code, out, err = invoke(t, root, true, `["iv","+","i"]`+"\n", "run", "--interactive", "--input", `"iv + i"`, "RomanParse.tokenize")
-	if code != 0 || out != "[\"iv\",\"+\",\"i\"]\n" {
+	code, out, err = invoke(t, root, true, `["iv", "+", "i"]`+"\n", "run", "--interactive", `RomanParse.tokenize("iv + i")`)
+	if code != 0 || out != `["iv", "+", "i"]`+"\n" {
 		t.Fatalf("teaching %d %s %s", code, out, err)
 	}
-	if !strings.Contains(read(t, root, "roman_parse.yaml"), "iv + i") {
-		t.Fatal("taught pair was not saved")
+	if !strings.Contains(read(t, root, "roman_parse.star"), `    example: tokenize("iv + i") == ["iv", "+", "i"]`) {
+		t.Fatal("taught example was not saved:\n" + read(t, root, "roman_parse.star"))
 	}
-	success(t, root, "example", "remove", "--input", `"iv + i"`, "RomanParse.tokenize")
-	code, _, _ = invoke(t, root, false, "", "run", "--input", `"iv + i"`, "RomanParse.tokenize")
+	success(t, root, "example", "remove", `RomanParse.tokenize("iv + i")`)
+	code, _, _ = invoke(t, root, false, "", "run", `RomanParse.tokenize("iv + i")`)
 	if code != 3 {
 		t.Fatal(code)
 	}
-	success(t, root, "example", "remove", "--input", `"vi"`, "RomanParse.parse")
+	// parse has examples in two files; removing finds each where it is written.
+	success(t, root, "example", "remove", `RomanParse.parse("vi")`)
+	success(t, root, "example", "remove", `RomanParse.parse("xii")`)
+	if strings.Contains(read(t, root, "roman_add.star"), "xii") {
+		t.Fatal("cross-file example was not removed")
+	}
 	if !strings.Contains(read(t, root, "park.html"), "needs examples") {
 		t.Fatal("catalog did not reflect readiness")
 	}
-	code, _, _ = invoke(t, root, false, "", "run", "--input", `"iv"`, "RomanParse.parse")
+	code, _, _ = invoke(t, root, false, "", "run", `RomanParse.parse("iv")`)
 	if code != 1 {
 		t.Fatal("unready body executed", code)
 	}
-	if success(t, root, "run", "--input", `"ix"`, "RomanParse.parse") != "9\n" {
+	if success(t, root, "run", `RomanParse.parse("ix")`) != "9\n" {
 		t.Fatal("known example was gated")
 	}
 }
-func TestRegistrationPreservesExamplesAndComments(t *testing.T) {
+
+func TestExampleEditsPreserveSource(t *testing.T) {
 	root := fixture(t)
-	source := read(t, root, "roman_parse.yaml")
-	write(t, root, "roman_parse.yaml", strings.Replace(source, `- {in: "ix", out: 9}`, `- {in: "ix", out: 9} # keep this comment`, 1))
-	success(t, root, "register", "roman_parse.star")
-	contents := read(t, root, "roman_parse.yaml")
-	if !strings.Contains(contents, "# keep this comment") {
-		t.Fatal("registration discarded comments")
+	source := strings.Replace(read(t, root, "roman_parse.star"), `example: parse("ix") == 9`, `example: parse("ix") == 9  # keep this comment`, 1)
+	write(t, root, "roman_parse.star", source)
+	success(t, root, "example", "add", `RomanParse.parse("xiv") == 14`)
+	after := read(t, root, "roman_parse.star")
+	if !strings.Contains(after, "# keep this comment") || !strings.Contains(after, `    example: parse("xiv") == 14`+"\n\n    def parse") {
+		t.Fatal("example add did not insert after the last example:\n" + after)
 	}
-	p, err := project.LoadWith(root, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(p.Processes["RomanParse"].Functions["parse"].Examples) != 2 || len(p.Processes["RomanParse"].Functions["tokenize"].Examples) != 2 {
-		t.Fatal("registration discarded authored examples")
-	}
-	success(t, root, "register", "roman_parse.star")
-	if read(t, root, "roman_parse.yaml") != contents {
-		t.Fatal("registration is not idempotent")
+	success(t, root, "example", "remove", `RomanParse.parse("xiv")`)
+	if read(t, root, "roman_parse.star") != source {
+		t.Fatal("add then remove did not restore the module")
 	}
 }
-func TestInitCRUD(t *testing.T) {
+
+func TestInitAndExamples(t *testing.T) {
 	root := t.TempDir()
 	success(t, root, "init")
-	write(t, root, "double.star", "\"\"\"Double an integer.\"\"\"\ndef double(value):\n    return value * 2\n")
-	success(t, root, "register", "double.star")
+	write(t, root, "double.star", "\"\"\"Double an integer.\"\"\"\ndef double(value):\n    result = value * 2\n    return result\n\ndef label(setting):\n    pass\n")
+	success(t, root, "build")
 	if !strings.Contains(success(t, root, "list"), "needs examples") {
-		t.Fatal("registration should need examples")
+		t.Fatal("a new implementation should need examples")
 	}
-	for _, n := range []int{1, 2} {
-		success(t, root, "example", "add", "--input", fmt.Sprint(n), "--output", fmt.Sprint(n*2), "Double.double")
+	success(t, root, "example", "add", "Double.double(1) == 2")
+	success(t, root, "example", "add", "Double.double(2) == 4")
+	if !strings.HasPrefix(read(t, root, "double.star"), "\"\"\"Double an integer.\"\"\"\n\nexample: double(1) == 2\nexample: double(2) == 4\n") {
+		t.Fatal("examples not placed after the module docstring:\n" + read(t, root, "double.star"))
 	}
-	if success(t, root, "run", "--input", "3", "Double.double") != "6\n" {
+	if success(t, root, "run", "Double.double(3)") != "6\n" {
 		t.Fatal("wrong result")
 	}
-	success(t, root, "function", "add", "--signature", "label(in) out", "Double.label")
-	success(t, root, "example", "add", "--input", "null", "--output", `{"ok":true}`, "Double.label")
-	if success(t, root, "run", "--input", "null", "Double.label") != "{\"ok\":true}\n" {
+	success(t, root, "example", "add", `Double.label(None) == {"ok": True}`)
+	if success(t, root, "run", "Double.label(setting=None)") != "{\"ok\": True}\n" {
 		t.Fatal("null/object lookup failed")
-	}
-	success(t, root, "function", "remove", "Double.label")
-	success(t, root, "process", "add", "--name", "Names")
-	success(t, root, "process", "remove", "Names")
-	success(t, root, "process", "remove", "Double")
-	if _, err := os.Stat(filepath.Join(root, "double.star")); err != nil {
-		t.Fatal("removal deleted source")
-	}
-	success(t, root, "build")
-	if strings.Contains(read(t, root, "park.html"), "Double") {
-		t.Fatal("removed registration reappeared")
 	}
 	code, _, _ := invoke(t, root, false, "", "init")
 	if code != 2 {
 		t.Fatal("init overwrote existing project")
 	}
 }
+
 func TestValidationHasNoSourceWrites(t *testing.T) {
-	cases := []struct{ name, old, new string }{
-		{"duplicate inputs", `- {in: "vi", out: 6}`, `- {in: "ix", out: 6}`},
-		{"unknown field", "version: 1", "version: 1\nunexpected: true"},
-		{"float", `out: 9`, `out: 9.5`},
-		{"missing pair field", `{in: "ix", out: 9}`, `{in: "ix"}`},
-		{"duplicate yaml key", "name: RomanParse", "name: RomanParse\nname: Duplicate"},
+	cases := []struct{ name, old, new, want string }{
+		{"duplicate inputs", `example: parse("vi") == 6`, `example: parse("ix") == 6`, "duplicate example"},
+		{"float", `parse("ix") == 9`, `parse("ix") == 9.5`, "literal"},
+		{"unknown input", `parse("ix") == 9`, `parse(numeral="ix") == 9`, "unknown input numeral"},
+		{"unknown function", `example: parse("ix") == 9`, `example: missing("ix") == 9`, "def missing(...): pass"},
+		{"keyword parameter", "def parse(text):", "def parse(in):", "roman_parse.star"},
+		{"returns an input", "        return value", "        return text", "returns its input"},
+		{"bare return", "        return value", "        return", "named variable"},
+		{"expression return", "        return value", "        return value + 0", "named variable"},
+		{"brace syntax", "Process RomanParse:", "Process RomanParse {", "Process Name:"},
+		{"example inside def", "        previous = 0\n", "        previous = 0\n        example: parse(\"i\") == 1\n", "example:"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			root := fixture(t)
 			success(t, root, "build")
 			html := read(t, root, "park.html")
-			bad := strings.Replace(read(t, root, "roman_parse.yaml"), tc.old, tc.new, 1)
-			write(t, root, "roman_parse.yaml", bad)
+			bad := strings.Replace(read(t, root, "roman_parse.star"), tc.old, tc.new, 1)
+			if bad == read(t, root, "roman_parse.star") {
+				t.Fatal("test case did not change the source")
+			}
+			write(t, root, "roman_parse.star", bad)
 			code, _, err := invoke(t, root, false, "", "build")
-			if code != 2 {
+			if code != 2 || !strings.Contains(err, tc.want) {
 				t.Fatalf("%d %s", code, err)
 			}
-			if read(t, root, "park.html") != html || read(t, root, "roman_parse.yaml") != bad {
+			if read(t, root, "park.html") != html || read(t, root, "roman_parse.star") != bad {
 				t.Fatal("validation failure changed source/catalog")
 			}
 		})
@@ -264,52 +263,49 @@ func TestValidationHasNoSourceWrites(t *testing.T) {
 func TestDependencyTeachingRetriesFreshSnapshot(t *testing.T) {
 	root := t.TempDir()
 	success(t, root, "init")
-	success(t, root, "process", "add", "--name", "Names")
-	success(t, root, "function", "add", "--signature", "canonical(in) out", "Names.canonical")
-	success(t, root, "example", "add", "--input", `"a"`, "--output", `"alpha"`, "Names.canonical")
-	success(t, root, "example", "add", "--input", `"b"`, "--output", `"beta"`, "Names.canonical")
-	write(t, root, "lookup.star", "def render(value):\n    return Names.canonical(value).upper()\n")
-	success(t, root, "register", "lookup.star")
-	success(t, root, "example", "add", "--input", `"a"`, "--output", `"ALPHA"`, "Lookup.render")
-	success(t, root, "example", "add", "--input", `"b"`, "--output", `"BETA"`, "Lookup.render")
-	code, out, err := invoke(t, root, true, "\"gamma\"\n", "run", "--interactive", "--input", `"c"`, "Lookup.render")
-	if code != 0 || out != "\"GAMMA\"\n" || !strings.Contains(err, "Names.canonical") {
+	write(t, root, "names.star", "example: canonical(\"a\") == \"alpha\"\nexample: canonical(\"b\") == \"beta\"\n\ndef canonical(alias):\n    pass\n")
+	write(t, root, "lookup.star", "example: render(\"a\") == \"ALPHA\"\nexample: render(\"b\") == \"BETA\"\n\ndef render(value):\n    result = Names.canonical(value).upper()\n    return result\n")
+	success(t, root, "build")
+	code, out, err := invoke(t, root, true, "\"gamma\"\n", "run", "--interactive", `Lookup.render("c")`)
+	if code != 0 || out != "\"GAMMA\"\n" || !strings.Contains(err, `Names.canonical(alias="c")`) {
 		t.Fatalf("%d %q %q", code, out, err)
+	}
+	if !strings.Contains(read(t, root, "names.star"), `example: canonical("c") == "gamma"`) {
+		t.Fatal("dependency not taught in its own module:\n" + read(t, root, "names.star"))
 	}
 	p, loadErr := project.LoadWith(root, nil)
 	if loadErr != nil {
 		t.Fatal(loadErr)
 	}
-	if len(p.Processes["Names"].Functions["canonical"].Examples) != 3 {
-		t.Fatal("dependency not taught")
-	}
 	if len(p.Processes["Lookup"].Functions["render"].Examples) != 2 {
 		t.Fatal("top-level example was changed")
 	}
 }
+
 func TestSameProcessDispatchCannotBypassReadiness(t *testing.T) {
 	for label, source := range map[string]string{
-		"regular":   "def inner(value):\n    return value + 1\n\ndef outer(value):\n    return inner(value)\n",
-		"bare":      "Process Local {\n    def inner(value):\n        return value + 1\n    def outer(value):\n        return inner(value)\n}\n",
-		"qualified": "Process Local {\n    def inner(value):\n        return value + 1\n    def outer(value):\n        return Local.inner(value)\n}\n",
+		"regular":   "def inner(value):\n    result = value + 1\n    return result\n\ndef outer(value):\n    result = inner(value)\n    return result\n",
+		"bare":      "Process Local:\n    def inner(value):\n        result = value + 1\n        return result\n    def outer(value):\n        result = inner(value)\n        return result\n",
+		"qualified": "Process Local:\n    def inner(value):\n        result = value + 1\n        return result\n    def outer(value):\n        result = Local.inner(value)\n        return result\n",
 	} {
 		t.Run(label, func(t *testing.T) {
 			root := t.TempDir()
 			success(t, root, "init")
 			write(t, root, "local.star", source)
-			success(t, root, "register", "local.star")
-			// Refresh must not infer a dependency on the process itself.
-			success(t, root, "register", "local.star")
+			success(t, root, "build")
 			for _, fn := range []string{"inner", "outer"} {
 				for _, n := range []int{1, 2} {
-					success(t, root, "example", "add", "--input", fmt.Sprint(n), "--output", fmt.Sprint(n+1), "Local."+fn)
+					success(t, root, "example", "add", fmt.Sprintf("Local.%s(%d) == %d", fn, n, n+1))
 				}
 			}
-			if out := success(t, root, "run", "--input", "3", "Local.outer"); out != "4\n" {
+			if p, err := project.LoadWith(root, nil); err != nil || len(p.Processes["Local"].Uses) != 0 {
+				t.Fatalf("a process must not depend on itself: %v", err)
+			}
+			if out := success(t, root, "run", "Local.outer(3)"); out != "4\n" {
 				t.Fatal(out)
 			}
-			success(t, root, "example", "remove", "--input", "2", "Local.inner")
-			code, _, err := invoke(t, root, false, "", "run", "--input", "3", "Local.outer")
+			success(t, root, "example", "remove", "Local.inner(2)")
+			code, _, err := invoke(t, root, false, "", "run", "Local.outer(3)")
 			if code != 1 || !strings.Contains(err, "Local.inner needs examples") {
 				t.Fatalf("inner bypassed dispatch: %d %s", code, err)
 			}
@@ -320,87 +316,73 @@ func TestSameProcessDispatchCannotBypassReadiness(t *testing.T) {
 func TestProcessDeclarationNamesAndPrivateHelpers(t *testing.T) {
 	root := t.TempDir()
 	success(t, root, "init")
-	write(t, root, "arithmetic.star", `Process Numbers {
+	write(t, root, "arithmetic.star", `Process Numbers:
     """Functions on numbers, with no shared state."""
+
+    example: next(1) == 2
+    example: next(2) == 3
+
     def _increment(value):
         items = []
         items.append(value)
         return items[0] + len(items)
+
     def next(value):
         """Return the following number."""
-        return _increment(value)
-}
+        following = _increment(value)
+        return following
 `)
-	code, _, errout := invoke(t, root, false, "", "register", "--name", "Other", "arithmetic.star")
-	if code != 2 || !strings.Contains(errout, "does not match") {
-		t.Fatalf("accepted conflicting name: %d %s", code, errout)
-	}
-	success(t, root, "register", "arithmetic.star")
+	success(t, root, "build")
 	p, err := project.LoadWith(root, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	proc := p.Processes["Numbers"]
-	if proc == nil || len(proc.Functions) != 1 || proc.Description != "Functions on numbers, with no shared state." || proc.Functions["next"].Description != "Return the following number." {
-		t.Fatalf("wrong registration: %+v", proc)
-	}
-	for _, n := range []int{1, 2} {
-		success(t, root, "example", "add", "--input", fmt.Sprint(n), "--output", fmt.Sprint(n+1), "Numbers.next")
+	if proc == nil || len(proc.Functions) != 1 || proc.Description != "Functions on numbers, with no shared state." || proc.Functions["next"].Description != "Return the following number." || proc.Functions["next"].Signature != "next(value) following" {
+		t.Fatalf("wrong process: %+v", proc)
 	}
 	for _, n := range []int{3, 4} {
-		if out := success(t, root, "run", "--input", fmt.Sprint(n), "Numbers.next"); out != fmt.Sprintln(n+1) {
+		if out := success(t, root, "run", fmt.Sprintf("Numbers.next(%d)", n)); out != fmt.Sprintln(n+1) {
 			t.Fatal(out)
 		}
 	}
 	success(t, root, "test")
-	before := read(t, root, "arithmetic.yaml")
-	write(t, root, "arithmetic.star", "Process Other {\n    def next(value):\n        return value + 1\n}\n")
-	for _, command := range []string{"build", "register"} {
-		args := []string{command}
-		if command == "register" {
-			args = append(args, "arithmetic.star")
-		}
-		code, _, errout := invoke(t, root, false, "", args...)
-		if code != 2 || !strings.Contains(errout, "does not match") || read(t, root, "arithmetic.yaml") != before {
-			t.Fatalf("%s accepted changed namespace or changed sidecar: %d %s", command, code, errout)
-		}
+	write(t, root, "other.star", "Process Numbers:\n    def f(x):\n        pass\n")
+	code, _, errout := invoke(t, root, false, "", "build")
+	if code != 2 || !strings.Contains(errout, "declared in both") {
+		t.Fatalf("accepted duplicate process: %d %s", code, errout)
 	}
 }
 
 func TestSourceRestrictionsAndStepLimit(t *testing.T) {
 	for _, source := range []string{
-		"def f(a, b):\n    return a\n",
+		"def f(*values):\n    return values\n",
+		"def f():\n    result = 1\n    return result\n",
 		"def f(a=1):\n    return a\n",
 		"load(\"other.star\", \"f\")\n",
-		"print(\"initialization ran\")\ndef f(x):\n    return x\n",
-		"def _helper(x=print(\"initialization ran\")):\n    return x\ndef f(x):\n    return x\n",
-		"Process Bad {\n    state = []\n    def f(x):\n        return x\n}\n",
-		"Process Bad {\n    def _helper(x=print(\"initialization ran\")):\n        return x\n    def f(x):\n        return x\n}\n",
+		"print(\"initialization ran\")\ndef f(x):\n    pass\n",
+		"def _helper(x=print(\"initialization ran\")):\n    return x\ndef f(x):\n    pass\n",
+		"Process Bad:\n    state = []\n    def f(x):\n        pass\n",
+		"Process Bad:\n    def _helper(x=print(\"initialization ran\")):\n        return x\n    def f(x):\n        pass\n",
 	} {
 		t.Run(source, func(t *testing.T) {
 			root := t.TempDir()
 			success(t, root, "init")
 			before := read(t, root, "park.html")
 			write(t, root, "bad.star", source)
-			code, _, _ := invoke(t, root, false, "", "register", "bad.star")
+			code, _, _ := invoke(t, root, false, "", "build")
 			if code != 2 {
-				t.Fatal("invalid module was registered", code)
+				t.Fatal("invalid module was accepted", code)
 			}
-			if _, err := os.Stat(filepath.Join(root, "bad.yaml")); !os.IsNotExist(err) {
-				t.Fatal("failed registration wrote a sidecar")
-			}
-			if read(t, root, "park.html") != before {
-				t.Fatal("failed registration changed catalog")
+			if read(t, root, "park.html") != before || read(t, root, "bad.star") != source {
+				t.Fatal("failed build changed files")
 			}
 		})
 	}
 	root := t.TempDir()
 	success(t, root, "init")
-	write(t, root, "loop.star", "def f(n):\n    total = 0\n    for i in range(n):\n        total += i\n    return total\n")
-	success(t, root, "register", "loop.star")
-	success(t, root, "example", "add", "--input", "1", "--output", "0", "Loop.f")
-	success(t, root, "example", "add", "--input", "2", "--output", "1", "Loop.f")
-	code, _, err := invoke(t, root, false, "", "run", "--input", "10000000", "Loop.f")
+	write(t, root, "loop.star", "example: f(1) == 0\nexample: f(2) == 1\n\ndef f(n):\n    total = 0\n    for i in range(n):\n        total += i\n    return total\n")
+	code, _, err := invoke(t, root, false, "", "run", "Loop.f(10000000)")
 	if code != 1 || !strings.Contains(err, "steps") {
 		t.Fatalf("step limit failed: %d %s", code, err)
 	}
@@ -408,41 +390,83 @@ func TestSourceRestrictionsAndStepLimit(t *testing.T) {
 		t.Fatal("failed evaluation was cached")
 	}
 }
+
 func TestObjectInputCanonicalizationAndEOF(t *testing.T) {
 	root := t.TempDir()
 	success(t, root, "init")
-	success(t, root, "process", "add", "--name", "Objects")
-	success(t, root, "function", "add", "--signature", "f(request) response", "Objects.f")
-	success(t, root, "example", "add", "--input", `{"b":2,"a":1}`, "--output", "null", "Objects.f")
-	if out := success(t, root, "run", "--input", `{"a":1,"b":2}`, "Objects.f"); out != "null\n" {
+	write(t, root, "objects.star", "def f(request):\n    pass\n")
+	success(t, root, "example", "add", `Objects.f({"b": 2, "a": 1}) == None`)
+	if out := success(t, root, "run", `Objects.f({"a": 1, "b": 2})`); out != "None\n" {
 		t.Fatal(out)
 	}
-	before := read(t, root, "Objects.yaml")
-	code, _, _ := invoke(t, root, false, "", "example", "add", "--input", `{"a":1,"b":2}`, "--output", "1", "Objects.f")
+	before := read(t, root, "objects.star")
+	code, _, _ := invoke(t, root, false, "", "example", "add", `Objects.f(request={"a": 1, "b": 2}) == 1`)
 	if code != 2 {
 		t.Fatal("duplicate object input accepted")
 	}
-	code, _, _ = invoke(t, root, true, "", "run", "--interactive", "--input", "null", "Objects.f")
+	code, _, _ = invoke(t, root, true, "", "run", "--interactive", "Objects.f(None)")
 	if code != 3 {
 		t.Fatal("EOF did not cancel unresolved call")
 	}
-	if read(t, root, "Objects.yaml") != before {
+	if read(t, root, "objects.star") != before {
 		t.Fatal("cancel or duplicate changed examples")
 	}
 }
 
-func TestProcessAddDoesNotOverwriteAnotherSidecar(t *testing.T) {
+func TestNamedInputs(t *testing.T) {
+	root := t.TempDir()
+	success(t, root, "init")
+	write(t, root, "math.star", "def add(left, right):\n    result = left + right\n    return result\n")
+	success(t, root, "example", "add", "Math.add(1, 2) == 3")
+	// Named arguments in any order are written positionally, in signature order.
+	success(t, root, "example", "add", "Math.add(right=5, left=4) == 9")
+	if !strings.Contains(read(t, root, "math.star"), "example: add(4, 5) == 9") {
+		t.Fatal("example not written in signature order:\n" + read(t, root, "math.star"))
+	}
+	if out := success(t, root, "run", "Math.add(10, 20)"); out != "30\n" {
+		t.Fatal(out)
+	}
+	for call, want := range map[string]string{
+		"Math.add(1)":             "missing input right",
+		"Math.add(1, 2, carry=0)": "unknown input carry",
+		"Math.add(1, 2, 3)":       "takes 2 inputs",
+		"Math.add(1, left=2)":     "given more than once",
+		"add(1, 2)":               "name the process",
+		"Math.add(one, 2)":        "not a literal",
+	} {
+		code, _, err := invoke(t, root, false, "", "run", call)
+		if code != 2 || !strings.Contains(err, want) {
+			t.Errorf("%s: %d %s", call, code, err)
+		}
+	}
+	if !strings.Contains(read(t, root, "park.html"), "left: 1\nright: 2\nresult: 3") {
+		t.Fatal("catalog does not show each named input")
+	}
+}
+
+func TestExamplesAreProjectWide(t *testing.T) {
 	root := fixture(t)
-	before := read(t, root, "roman_parse.yaml")
-	code, _, _ := invoke(t, root, false, "", "process", "add", "--name", "Other", "--module", "roman_parse.star")
-	if code != 2 || read(t, root, "roman_parse.yaml") != before {
-		t.Fatal("process add overwrote an existing sidecar")
+	p, err := project.LoadWith(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parse := p.Processes["RomanParse"].Functions["parse"]
+	if len(parse.Examples) != 3 || parse.Examples[2].Path != "roman_add.star" {
+		t.Fatalf("cross-file example missing: %+v", parse.Examples)
+	}
+	if len(p.Processes["RomanAdd"].Uses) != 1 {
+		t.Fatal("examples must not create dependencies, but code references must")
+	}
+	write(t, root, "extra.star", "example: RomanParse.parse(\"xii\") == 12\n\ndef unused(x):\n    pass\n")
+	code, _, errout := invoke(t, root, false, "", "build")
+	if code != 2 || !strings.Contains(errout, `duplicate example for RomanParse.parse(text="xii"); first written at`) {
+		t.Fatalf("duplicate across files accepted: %d %s", code, errout)
 	}
 }
 
 func TestHelpWithoutProject(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "does-not-exist")
-	for _, args := range [][]string{{"run", "--help"}, {"register", "--help"}, {"process", "add", "--help"}, {"function", "add", "--help"}, {"example", "remove", "--help"}} {
+	for _, args := range [][]string{{"run", "--help"}, {"list", "--help"}, {"test", "--help"}, {"example", "add", "--help"}, {"example", "remove", "--help"}} {
 		code, _, err := invoke(t, root, false, "", args...)
 		if code != 0 || !strings.Contains(err, "Usage of") {
 			t.Fatalf("help failed %v: %d %s", args, code, err)
@@ -452,7 +476,7 @@ func TestHelpWithoutProject(t *testing.T) {
 
 func TestInteractiveCancellationDoesNotWrite(t *testing.T) {
 	root := fixture(t)
-	before := read(t, root, "roman_parse.yaml")
+	before := read(t, root, "roman_parse.star")
 	reader, writer := io.Pipe()
 	defer reader.Close()
 	defer writer.Close()
@@ -462,7 +486,7 @@ func TestInteractiveCancellationDoesNotWrite(t *testing.T) {
 	c := &CLI{In: reader, Out: &out, Err: &err, Terminal: true}
 	done := make(chan int, 1)
 	go func() {
-		done <- c.Run(ctx, []string{"--root", root, "run", "--interactive", "--input", `"unknown"`, "RomanParse.tokenize"})
+		done <- c.Run(ctx, []string{"--root", root, "run", "--interactive", `RomanParse.tokenize("unknown")`})
 	}()
 	select {
 	case code := <-done:
@@ -472,7 +496,7 @@ func TestInteractiveCancellationDoesNotWrite(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("cancellation left prompt blocked")
 	}
-	if read(t, root, "roman_parse.yaml") != before {
+	if read(t, root, "roman_parse.star") != before {
 		t.Fatal("cancelled prompt changed authored data")
 	}
 }

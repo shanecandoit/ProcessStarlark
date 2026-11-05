@@ -1,6 +1,8 @@
 # Idea: what goes into and out of a function
 
-Status: open question. This page compares options; nothing here changes v1 yet.
+Status: option C (named inputs, one output) is implemented; see
+[design.md](design.md) D1–D4. Examples on this page use the earlier YAML
+format; the reasoning is unchanged.
 
 ## Where we are today
 

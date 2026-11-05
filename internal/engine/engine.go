@@ -4,7 +4,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"go.starlark.net/starlark"
@@ -20,11 +19,17 @@ const MaxCalls = 128
 
 type Unresolved struct {
 	Function string
-	Input    any
+	Inputs   []string       // Input names in signature order, for display.
+	Input    map[string]any // Named inputs.
 }
 
 func (u *Unresolved) Error() string {
-	return fmt.Sprintf("unresolved call %s(%s)", u.Function, samples.Key(u.Input))
+	return "unresolved call " + FormatCall(u.Function, u.Inputs, u.Input)
+}
+
+// FormatCall renders a call as Process.fn(name=value, ...) in signature order.
+func FormatCall(qualified string, names []string, input map[string]any) string {
+	return project.FormatCall(qualified, names, input)
 }
 
 type Engine struct {
@@ -49,20 +54,46 @@ func New(p *project.Project) (*Engine, error) {
 }
 func (e *Engine) wrapper(qualified string) *starlark.Builtin {
 	return starlark.NewBuiltin(qualified, func(t *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-		if len(args) != 1 || len(kwargs) != 0 {
-			return nil, fmt.Errorf("%s expects exactly one positional input", qualified)
-		}
-		input, err := fromStar(args[0], 0)
+		_, f, err := e.Project.Function(qualified)
 		if err != nil {
-			return nil, fmt.Errorf("%s input: %w", qualified, err)
+			return nil, err
+		}
+		input, err := bindArgs(qualified, f, args, kwargs)
+		if err != nil {
+			return nil, err
 		}
 		out, err := e.dispatch(t, qualified, input)
 		if err != nil {
 			return nil, err
 		}
-		return toStar(out), nil
+		return samples.ToStar(out), nil
 	})
 }
+
+// bindArgs converts Starlark call arguments and binds them to named inputs.
+func bindArgs(qualified string, f *project.Function, args starlark.Tuple, kwargs []starlark.Tuple) (map[string]any, error) {
+	positional := make([]any, len(args))
+	for i, arg := range args {
+		v, err := samples.FromStar(arg, 0)
+		if err != nil {
+			return nil, fmt.Errorf("%s argument %d: %w", qualified, i+1, err)
+		}
+		positional[i] = v
+	}
+	names := make([]string, len(kwargs))
+	values := make([]any, len(kwargs))
+	for i, kw := range kwargs {
+		key, _ := kw[0].(starlark.String)
+		names[i] = string(key)
+		v, err := samples.FromStar(kw[1], 0)
+		if err != nil {
+			return nil, fmt.Errorf("%s input %s: %w", qualified, names[i], err)
+		}
+		values[i] = v
+	}
+	return f.BindArgs(qualified, positional, names, values)
+}
+
 func (e *Engine) load(name string) error {
 	if e.loaded[name] {
 		return nil
@@ -73,19 +104,24 @@ func (e *Engine) load(name string) error {
 			return err
 		}
 	}
-	if proc.Module == "" {
-		e.loaded[name] = true
-		return nil
-	}
-	path := filepath.Clean(filepath.Join(filepath.Dir(proc.ManifestPath), proc.Module))
+	path := proc.Module
 	parsed, err := source.Parse(path, e.Project.Files[path])
 	if err != nil {
 		return err
 	}
-	if parsed.Name != "" && parsed.Name != name {
-		return fmt.Errorf("%s: Process %s does not match registered name %s", path, parsed.Name, name)
-	}
 	file := parsed.File
+	// Example-only declarations (`def f(x): pass`) have no body to run; calls
+	// to them dispatch to examples.
+	kept := file.Stmts[:0]
+	for _, stmt := range file.Stmts {
+		if def, ok := stmt.(*syntax.DefStmt); ok {
+			if f := proc.Functions[def.Name.Name]; f != nil && !f.Implemented {
+				continue
+			}
+		}
+		kept = append(kept, stmt)
+	}
+	file.Stmts = kept
 	pre := starlark.StringDict{}
 	disabled := func(_ *starlark.Thread, b *starlark.Builtin, _ starlark.Tuple, _ []starlark.Tuple) (starlark.Value, error) {
 		return nil, fmt.Errorf("%s is unavailable in Park", b.Name())
@@ -100,32 +136,21 @@ func (e *Engine) load(name string) error {
 		}
 		pre[dep] = starlarkstruct.FromStringDict(starlark.String(dep), members)
 	}
-	if parsed.Name != "" {
-		if _, exists := pre[name]; exists {
-			return fmt.Errorf("%s: Process name %s collides with a dependency or reserved builtin", path, name)
-		}
-		members := starlark.StringDict{}
-		for _, fn := range project.Names(proc.Functions) {
-			members[fn] = e.wrapper(name + "." + fn)
-		}
-		pre[name] = starlarkstruct.FromStringDict(starlark.String(name), members)
+	// The process's own namespace, so `RomanAdd.eval(...)` works inside RomanAdd.
+	if _, exists := pre[name]; exists {
+		return fmt.Errorf("%s: Process name %s collides with a dependency or reserved builtin", path, name)
 	}
+	members := starlark.StringDict{}
+	for _, fn := range project.Names(proc.Functions) {
+		members[fn] = e.wrapper(name + "." + fn)
+	}
+	pre[name] = starlarkstruct.FromStringDict(starlark.String(name), members)
 	aliases := map[string]string{}
 	for _, fn := range project.Names(proc.Functions) {
-		f := proc.Functions[fn]
-		qualified := name + "." + fn
-		for _, alias := range []string{fn, f.Implementation} {
-			if alias == "" {
-				continue
-			}
-			if previous, ok := aliases[alias]; ok && previous != qualified {
-				return fmt.Errorf("%s: ambiguous implementation/export alias %s", name, alias)
-			}
-			if _, ok := pre[alias]; ok {
-				return fmt.Errorf("%s: export %s collides with a dependency or reserved builtin", name, alias)
-			}
-			aliases[alias] = qualified
+		if _, ok := pre[fn]; ok {
+			return fmt.Errorf("%s: function %s collides with a process name or reserved builtin", path, fn)
 		}
+		aliases[fn] = name + "." + fn
 	}
 	for alias, qualified := range aliases {
 		pre[alias] = e.wrapper(qualified)
@@ -140,7 +165,7 @@ func (e *Engine) load(name string) error {
 			return false
 		}
 		if _, ok := node.(*syntax.LoadStmt); ok {
-			walkErr = fmt.Errorf("%s: load() is unavailable; declare uses in the manifest", path)
+			walkErr = fmt.Errorf("%s: load() is unavailable; call other processes as Process.function(...)", path)
 			return false
 		}
 		// Defaults execute at initialization, including defaults in private helpers.
@@ -186,24 +211,9 @@ func (e *Engine) load(name string) error {
 		}
 	}
 	for _, fn := range project.Names(proc.Functions) {
-		f := proc.Functions[fn]
-		if f.Implementation == "" {
-			if definitions[fn] != nil {
-				return fmt.Errorf("%s: %s has a body but no registered implementation", path, fn)
-			}
-			continue
+		if proc.Functions[fn].Implemented {
+			definitions[fn].Name.Name = "__park_body_" + fn
 		}
-		def := definitions[f.Implementation]
-		if def == nil {
-			return fmt.Errorf("%s: missing implementation %s", path, f.Implementation)
-		}
-		if len(def.Params) != 1 {
-			return fmt.Errorf("%s: %s must have one positional parameter", path, f.Implementation)
-		}
-		if _, ok := def.Params[0].(*syntax.Ident); !ok {
-			return fmt.Errorf("%s: %s cannot use defaults or variadic parameters", path, f.Implementation)
-		}
-		def.Name.Name = "__park_body_" + fn
 	}
 	// Unregistered same-process implementation names must not shadow dispatch.
 	for alias, qualified := range aliases {
@@ -224,7 +234,7 @@ func (e *Engine) load(name string) error {
 	globals.Freeze()
 	pre.Freeze()
 	for _, fn := range project.Names(proc.Functions) {
-		if proc.Functions[fn].Implementation != "" {
+		if proc.Functions[fn].Implemented {
 			body, ok := globals["__park_body_"+fn].(*starlark.Function)
 			if !ok {
 				return fmt.Errorf("%s.%s: implementation is not a function", name, fn)
@@ -294,8 +304,12 @@ func (e *Engine) Run(ctx context.Context, qualified string, input any) (any, err
 	}
 	return output, err
 }
-func (e *Engine) dispatch(thread *starlark.Thread, qualified string, input any) (any, error) {
+func (e *Engine) dispatch(thread *starlark.Thread, qualified string, raw any) (any, error) {
 	_, f, err := e.Project.Function(qualified)
+	if err != nil {
+		return nil, err
+	}
+	input, err := f.BindInput(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -323,7 +337,7 @@ func (e *Engine) dispatch(thread *starlark.Thread, qualified string, input any) 
 	}
 	body := e.bodies[qualified]
 	if body == nil {
-		u := &Unresolved{Function: qualified, Input: input}
+		u := &Unresolved{Function: qualified, Inputs: f.Inputs, Input: input}
 		e.unresolved = u
 		return nil, u
 	}
@@ -340,13 +354,16 @@ func (e *Engine) dispatch(thread *starlark.Thread, qualified string, input any) 
 	e.active[callKey] = true
 	e.depth++
 	defer func() { delete(e.active, callKey); e.depth-- }()
-	arg := toStar(input)
-	arg.Freeze()
-	result, err := starlark.Call(thread, body, starlark.Tuple{arg}, nil)
+	args := make(starlark.Tuple, len(f.Inputs))
+	for i, name := range f.Inputs {
+		args[i] = samples.ToStar(input[name])
+		args[i].Freeze()
+	}
+	result, err := starlark.Call(thread, body, args, nil)
 	if err != nil {
 		return nil, err
 	}
-	output, err := fromStar(result, 0)
+	output, err := samples.FromStar(result, 0)
 	if err != nil {
 		return nil, fmt.Errorf("%s output: %w", qualified, err)
 	}
@@ -356,87 +373,4 @@ func (e *Engine) dispatch(thread *starlark.Thread, qualified string, input any) 
 		}
 	}
 	return output, nil
-}
-
-func toStar(v any) starlark.Value {
-	switch x := v.(type) {
-	case nil:
-		return starlark.None
-	case bool:
-		return starlark.Bool(x)
-	case string:
-		return starlark.String(x)
-	case int64:
-		return starlark.MakeInt64(x)
-	case []any:
-		a := make([]starlark.Value, len(x))
-		for i, v := range x {
-			a[i] = toStar(v)
-		}
-		return starlark.NewList(a)
-	case map[string]any:
-		d := starlark.NewDict(len(x))
-		for _, k := range project.Names(x) {
-			_ = d.SetKey(starlark.String(k), toStar(x[k]))
-		}
-		return d
-	default:
-		panic(fmt.Sprintf("unsupported host value %T", v))
-	}
-}
-func fromStar(v starlark.Value, depth int) (any, error) {
-	if depth > samples.MaxDepth {
-		return nil, fmt.Errorf("value nesting exceeds %d", samples.MaxDepth)
-	}
-	var out any
-	switch x := v.(type) {
-	case starlark.NoneType:
-		out = nil
-	case starlark.Bool:
-		out = bool(x)
-	case starlark.String:
-		out = string(x)
-	case starlark.Int:
-		n, ok := x.Int64()
-		if !ok {
-			return nil, fmt.Errorf("integer outside signed 64-bit range")
-		}
-		out = n
-	case *starlark.List:
-		if x.Len() > samples.MaxValueBytes/2 {
-			return nil, fmt.Errorf("list exceeds size limit")
-		}
-		a := make([]any, x.Len())
-		for i := range a {
-			v, err := fromStar(x.Index(i), depth+1)
-			if err != nil {
-				return nil, err
-			}
-			a[i] = v
-		}
-		out = a
-	case *starlark.Dict:
-		if x.Len() > samples.MaxValueBytes/4 {
-			return nil, fmt.Errorf("object exceeds size limit")
-		}
-		m := map[string]any{}
-		for _, item := range x.Items() {
-			k, ok := item[0].(starlark.String)
-			if !ok {
-				return nil, fmt.Errorf("map keys must be strings")
-			}
-			v, err := fromStar(item[1], depth+1)
-			if err != nil {
-				return nil, err
-			}
-			m[string(k)] = v
-		}
-		out = m
-	default:
-		return nil, fmt.Errorf("unsupported Starlark value %s", v.Type())
-	}
-	if _, err := samples.Canonical(out); err != nil {
-		return nil, err
-	}
-	return out, nil
 }

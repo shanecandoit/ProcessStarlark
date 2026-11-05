@@ -1,4 +1,6 @@
 // Package project loads and validates Park projects without executing code.
+// A project is a flat directory of .star modules. Each module is one process;
+// its functions, signatures, descriptions, and examples all come from source.
 package project
 
 import (
@@ -7,53 +9,69 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
-	"go.yaml.in/yaml/v3"
+	"go.starlark.net/syntax"
 	"park/internal/samples"
+	"park/internal/source"
 )
 
 const MaxFileBytes = 2 << 20
 const MaxProjectBytes = 32 << 20
 const MaxFiles = 2048
-const CodecVersion = "park-v1-codec-1-engine-2"
+const CodecVersion = "park-v2-codec-2-engine-4"
+
+// PlaceholderOutput is the output name of example-only functions, and the
+// conventional name for implementations to return.
+const PlaceholderOutput = "result"
 
 var identifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-var signature = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\(([A-Za-z_][A-Za-z0-9_]*)\) ([A-Za-z_][A-Za-z0-9_]*)$`)
 var keywords = strings.Fields("and as assert break class continue def del elif else except finally for from global if import in is lambda load nonlocal not or pass raise return try while with yield True False None")
 
 func ValidName(name string) bool {
 	if !identifier.MatchString(name) || strings.HasPrefix(name, "__park_") {
 		return false
 	}
-	for _, k := range keywords {
-		if name == k {
-			return false
-		}
-	}
-	return true
+	return !slices.Contains(keywords, name)
 }
 
-func Signature(s string) (name, input, output string, err error) {
-	m := signature.FindStringSubmatch(s)
-	if m == nil || !ValidName(m[1]) || m[2] == m[3] {
-		return "", "", "", fmt.Errorf("invalid signature %q; expected name(input) output with distinct labels", s)
+// FormatSignature writes the canonical spelling of a signature.
+func FormatSignature(name string, inputs []string, output string) string {
+	return name + "(" + strings.Join(inputs, ", ") + ") " + output
+}
+
+// FormatCall renders a call as Process.fn(name=value, ...) in signature order.
+func FormatCall(qualified string, names []string, input map[string]any) string {
+	parts := make([]string, len(names))
+	for i, name := range names {
+		parts[i] = name + "=" + samples.Literal(input[name])
 	}
-	return m[1], m[2], m[3], nil
+	return qualified + "(" + strings.Join(parts, ", ") + ")"
+}
+
+// Example is one authored example, located where it was written.
+type Example struct {
+	Input         map[string]any // Named inputs.
+	Output        any
+	Path          string
+	Line, EndLine int
 }
 
 type Function struct {
-	Name, Description, Implementation               string
-	Signature, InputLabel, OutputLabel, ExamplePath string
-	Document                                        *yaml.Node
-	Node                                            *yaml.Node
-	Examples                                        []samples.Pair
-	Index                                           map[string]any
+	Name, Description string
+	Implemented       bool // False for example-only functions (`def f(x): pass`).
+	Signature, Output string
+	Inputs            []string // Named inputs, in parameter order.
+	Path              string   // Module that declares the function.
+	Line              int
+	Examples          []Example
+	Index             map[string]any // Canonical input -> output.
 }
 
 func (f *Function) State() string {
-	if f.Implementation == "" {
+	if !f.Implemented {
 		return "example-only"
 	}
 	if len(f.Examples) < 2 {
@@ -62,12 +80,66 @@ func (f *Function) State() string {
 	return "implemented"
 }
 
-type Process struct {
-	Name, Description, Module, ManifestPath string
-	Uses                                    []string
-	Functions                               map[string]*Function
-	Document                                *yaml.Node
+// BindInput checks that v is an object naming exactly the function's inputs.
+func (f *Function) BindInput(v any) (map[string]any, error) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%s expects inputs %s", f.Name, strings.Join(f.Inputs, ", "))
+	}
+	for _, name := range f.Inputs {
+		if _, ok := m[name]; !ok {
+			return nil, fmt.Errorf("%s: missing input %s", f.Name, name)
+		}
+	}
+	if len(m) != len(f.Inputs) {
+		for _, name := range Names(m) {
+			if !slices.Contains(f.Inputs, name) {
+				return nil, fmt.Errorf("%s: unknown input %s; expected %s", f.Name, name, strings.Join(f.Inputs, ", "))
+			}
+		}
+	}
+	return m, nil
 }
+
+// BindArgs maps positional arguments (in signature order) and named arguments
+// onto the function's inputs. Both styles produce the same input object, so
+// they share examples and cached results.
+func (f *Function) BindArgs(qualified string, args []any, names []string, values []any) (map[string]any, error) {
+	if len(args) > len(f.Inputs) {
+		return nil, fmt.Errorf("%s takes %d inputs (%s), got %d positional arguments", qualified, len(f.Inputs), strings.Join(f.Inputs, ", "), len(args))
+	}
+	input := map[string]any{}
+	for i, v := range args {
+		input[f.Inputs[i]] = v
+	}
+	for i, name := range names {
+		if !slices.Contains(f.Inputs, name) {
+			return nil, fmt.Errorf("%s: unknown input %s; expected %s", qualified, name, strings.Join(f.Inputs, ", "))
+		}
+		if _, dup := input[name]; dup {
+			return nil, fmt.Errorf("%s: input %s given more than once", qualified, name)
+		}
+		input[name] = values[i]
+	}
+	for _, name := range f.Inputs {
+		if _, ok := input[name]; !ok {
+			return nil, fmt.Errorf("%s: missing input %s", qualified, name)
+		}
+	}
+	return input, nil
+}
+
+type Process struct {
+	Name, Description, Module string
+	Uses                      []string
+	Functions                 map[string]*Function
+	// Layout used when inserting example lines into the module.
+	Indent     string // Body indentation ("" for regular modules).
+	Header     int    // Line of `Process Name:`, or 0.
+	DocEnd     int    // Last line of the process docstring, or 0.
+	ExampleEnd int    // Last line of the module's last example, or 0.
+}
+
 type Project struct {
 	Root, Revision string
 	Processes      map[string]*Process
@@ -144,18 +216,34 @@ func Discover(start string) (string, error) {
 		if entry.Name() == ".park" && entry.IsDir() {
 			return root, nil
 		}
-		if !entry.IsDir() && (strings.HasSuffix(entry.Name(), ".star") || strings.HasSuffix(entry.Name(), ".yaml") || strings.HasSuffix(entry.Name(), ".yml")) {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".star") {
 			return root, nil
 		}
 	}
 	return "", fmt.Errorf("no Park project found in current directory; use park init or --root PATH")
 }
 
+// ProcessName derives a regular module's process name: roman_parse.star -> RomanParse.
+func ProcessName(module string) string {
+	name := ""
+	for _, part := range strings.Split(strings.TrimSuffix(module, ".star"), "_") {
+		if part != "" {
+			name += strings.ToUpper(part[:1]) + part[1:]
+		}
+	}
+	return name
+}
+
+type pending struct {
+	process string
+	example source.Example
+}
+
 // LoadWith validates a proposed flat project snapshot; nil contents remove files.
 func LoadWith(root string, overlay map[string][]byte) (*Project, error) {
-	canonicalRoot, rootErr := Root(root)
-	if rootErr != nil {
-		return nil, rootErr
+	canonicalRoot, err := Root(root)
+	if err != nil {
+		return nil, err
 	}
 	root = canonicalRoot
 	p := &Project{Root: root, Processes: map[string]*Process{}, Files: map[string][]byte{}}
@@ -165,18 +253,17 @@ func LoadWith(root string, overlay map[string][]byte) (*Project, error) {
 		return nil, err
 	}
 	for _, entry := range entries {
-		name := entry.Name()
-		if !entry.IsDir() && (strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml")) {
-			candidates[name] = true
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".star") {
+			candidates[entry.Name()] = true
 		}
 	}
 	for path, b := range overlay {
 		if _, err := SafePath(root, path); err != nil {
 			return nil, err
 		}
-		if strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml") {
+		if strings.HasSuffix(path, ".star") {
 			if filepath.Dir(path) != "." {
-				return nil, fmt.Errorf("sidecars must be in project root: %s", path)
+				return nil, fmt.Errorf("modules must be in project root: %s", path)
 			}
 			if b == nil {
 				delete(candidates, path)
@@ -189,17 +276,10 @@ func LoadWith(root string, overlay map[string][]byte) (*Project, error) {
 		return nil, fmt.Errorf("project exceeds %d files", MaxFiles)
 	}
 	total := 0
-	read := func(rel string) ([]byte, error) {
-		if existing, ok := p.Files[rel]; ok {
-			return existing, nil
-		}
-		var b []byte
-		if proposed, ok := overlay[rel]; ok {
-			if proposed == nil {
-				return nil, fmt.Errorf("missing file %s", rel)
-			}
-			b = proposed
-		} else {
+	var examples []pending
+	for _, rel := range Names(candidates) {
+		b, ok := overlay[rel]
+		if !ok {
 			path, err := SafePath(root, rel)
 			if err != nil {
 				return nil, err
@@ -211,67 +291,188 @@ func LoadWith(root string, overlay map[string][]byte) (*Project, error) {
 			if !info.Mode().IsRegular() || info.Size() > MaxFileBytes {
 				return nil, fmt.Errorf("%s: expected regular file no larger than %d bytes", rel, MaxFileBytes)
 			}
-			b, err = os.ReadFile(path)
-			if err != nil {
+			if b, err = os.ReadFile(path); err != nil {
 				return nil, err
 			}
 		}
 		if len(b) > MaxFileBytes {
 			return nil, fmt.Errorf("%s exceeds file limit", rel)
 		}
-		total += len(b)
-		if total > MaxProjectBytes || len(p.Files) >= MaxFiles {
+		if total += len(b); total > MaxProjectBytes {
 			return nil, fmt.Errorf("project size limit exceeded")
 		}
 		p.Files[rel] = b
-		return b, nil
-	}
-	for _, rel := range Names(candidates) {
-		b, err := read(rel)
+		proc, module, err := parseProcess(rel, b)
 		if err != nil {
 			return nil, err
 		}
-		proc, err := parseProcess(rel, b)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", rel, err)
-		}
-		if _, ok := p.Processes[proc.Name]; ok {
-			return nil, fmt.Errorf("duplicate process %s", proc.Name)
+		if other := p.Processes[proc.Name]; other != nil {
+			return nil, fmt.Errorf("process %s is declared in both %s and %s", proc.Name, other.Module, rel)
 		}
 		p.Processes[proc.Name] = proc
+		for _, ex := range module.Examples {
+			examples = append(examples, pending{proc.Name, ex})
+		}
 	}
 	for _, name := range Names(p.Processes) {
-		proc := p.Processes[name]
-		for _, dep := range proc.Uses {
-			if p.Processes[dep] == nil {
-				return nil, fmt.Errorf("%s uses missing process %s", name, dep)
-			}
+		if err := p.inferUses(p.Processes[name]); err != nil {
+			return nil, err
 		}
-		implementations := map[string]bool{}
-		for _, fnName := range Names(proc.Functions) {
-			f := proc.Functions[fnName]
-			if f.Implementation != "" {
-				if proc.Module == "" {
-					return nil, fmt.Errorf("%s.%s: implementation needs a module", name, fnName)
-				}
-				if implementations[f.Implementation] {
-					return nil, fmt.Errorf("%s: implementation %s registered more than once", name, f.Implementation)
-				}
-				implementations[f.Implementation] = true
+	}
+	if err := p.checkCycles(); err != nil {
+		return nil, err
+	}
+	// A function's examples list those in its own module first, then those
+	// written elsewhere, each in file and line order.
+	for _, own := range []bool{true, false} {
+		for _, item := range examples {
+			if (item.example.Call.Process == "" || item.example.Call.Process == item.process) != own {
+				continue
 			}
-		}
-		if proc.Module != "" {
-			if filepath.Dir(proc.Module) != "." || filepath.Ext(proc.Module) != ".star" {
-				return nil, fmt.Errorf("%s: module must be a .star file beside its YAML sidecar", name)
-			}
-			if strings.TrimSuffix(proc.ManifestPath, filepath.Ext(proc.ManifestPath)) != strings.TrimSuffix(proc.Module, ".star") {
-				return nil, fmt.Errorf("%s: YAML sidecar must match module basename", name)
-			}
-			if _, err := read(proc.Module); err != nil {
-				return nil, fmt.Errorf("%s module: %w", name, err)
+			if err := p.addExample(item); err != nil {
+				return nil, err
 			}
 		}
 	}
+	h := sha256.New()
+	fmt.Fprintln(h, CodecVersion)
+	for _, path := range Names(p.Files) {
+		b := p.Files[path]
+		fmt.Fprintf(h, "%d:%s%d:", len(path), path, len(b))
+		h.Write(b)
+	}
+	p.Revision = fmt.Sprintf("%x", h.Sum(nil))
+	return p, nil
+}
+
+func parseProcess(path string, b []byte) (*Process, *source.Module, error) {
+	module, err := source.Parse(path, b)
+	if err != nil {
+		return nil, nil, err
+	}
+	proc := &Process{Name: module.Name, Module: path, Functions: map[string]*Function{}, Indent: module.Indent, Header: module.Header}
+	if proc.Name == "" {
+		proc.Name = ProcessName(path)
+	}
+	if !ValidName(proc.Name) {
+		return nil, nil, fmt.Errorf("%s: invalid process name %q", path, proc.Name)
+	}
+	if len(module.File.Stmts) > 0 {
+		if doc, ok := docString(module.File.Stmts[:1]); ok {
+			proc.Description = doc
+			_, end := module.File.Stmts[0].Span()
+			proc.DocEnd = int(end.Line)
+		}
+	}
+	for _, ex := range module.Examples {
+		proc.ExampleEnd = max(proc.ExampleEnd, ex.EndLine)
+	}
+	for _, stmt := range module.File.Stmts {
+		def, ok := stmt.(*syntax.DefStmt)
+		if !ok || strings.HasPrefix(def.Name.Name, "_") {
+			continue
+		}
+		f, err := parseFunction(path, def)
+		if err != nil {
+			return nil, nil, err
+		}
+		if proc.Functions[f.Name] != nil {
+			return nil, nil, fmt.Errorf("%s: duplicate definition %s", def.Def, f.Name)
+		}
+		proc.Functions[f.Name] = f
+	}
+	return proc, module, nil
+}
+
+// parseFunction reads a signature from a def: inputs from its parameters and
+// the output from the variable that every return statement returns.
+func parseFunction(path string, def *syntax.DefStmt) (*Function, error) {
+	name := def.Name.Name
+	if !ValidName(name) {
+		return nil, fmt.Errorf("%s: invalid function name %q", def.Def, name)
+	}
+	f := &Function{Name: name, Path: path, Line: int(def.Def.Line), Index: map[string]any{}}
+	for _, param := range def.Params {
+		id, ok := param.(*syntax.Ident)
+		if !ok {
+			return nil, fmt.Errorf("%s: %s cannot use defaults, *args, or **kwargs", def.Def, name)
+		}
+		f.Inputs = append(f.Inputs, id.Name)
+	}
+	if len(f.Inputs) == 0 {
+		return nil, fmt.Errorf("%s: %s needs at least one input", def.Def, name)
+	}
+	body := def.Body
+	if doc, ok := docString(body); ok {
+		f.Description = doc
+		body = body[1:]
+	}
+	f.Implemented = slices.ContainsFunc(body, func(s syntax.Stmt) bool {
+		b, ok := s.(*syntax.BranchStmt)
+		return !ok || b.Token != syntax.PASS
+	})
+	if !f.Implemented {
+		f.Output = PlaceholderOutput
+	} else {
+		var walkErr error
+		visit := func(n syntax.Node) bool {
+			if walkErr != nil {
+				return false
+			}
+			switch n := n.(type) {
+			case *syntax.DefStmt, *syntax.LambdaExpr:
+				return false // Nested functions have their own returns.
+			case *syntax.ReturnStmt:
+				id, ok := n.Result.(*syntax.Ident)
+				if !ok {
+					walkErr = fmt.Errorf("%s: %s must return a named variable, e.g. `result = ...` then `return result`; the name becomes the output's name", n.Return, name)
+					return false
+				}
+				if f.Output != "" && f.Output != id.Name {
+					walkErr = fmt.Errorf("%s: %s returns both %s and %s; every return must use the same name", n.Return, name, f.Output, id.Name)
+					return false
+				}
+				f.Output = id.Name
+			}
+			return true
+		}
+		for _, stmt := range body {
+			syntax.Walk(stmt, visit)
+		}
+		if walkErr != nil {
+			return nil, walkErr
+		}
+		if f.Output == "" {
+			return nil, fmt.Errorf("%s: %s must end with `return <name>`, e.g. `return result`; use `pass` for an example-only function", def.Def, name)
+		}
+	}
+	if slices.Contains(f.Inputs, f.Output) {
+		return nil, fmt.Errorf("%s: %s returns its input %s; return a new name so the output is named differently", def.Def, name, f.Output)
+	}
+	f.Signature = FormatSignature(name, f.Inputs, f.Output)
+	return f, nil
+}
+
+// inferUses records the processes a module's code refers to as Process.member.
+func (p *Project) inferUses(proc *Process) error {
+	module, err := source.Parse(proc.Module, p.Files[proc.Module])
+	if err != nil {
+		return err
+	}
+	uses := map[string]bool{}
+	syntax.Walk(module.File, func(n syntax.Node) bool {
+		if dot, ok := n.(*syntax.DotExpr); ok {
+			if id, ok := dot.X.(*syntax.Ident); ok && id.Name != proc.Name && p.Processes[id.Name] != nil {
+				uses[id.Name] = true
+			}
+		}
+		return true
+	})
+	proc.Uses = Names(uses)
+	return nil
+}
+
+func (p *Project) checkCycles() error {
 	visiting, visited := map[string]bool{}, map[string]bool{}
 	var visit func(string) error
 	visit = func(name string) error {
@@ -293,144 +494,58 @@ func LoadWith(root string, overlay map[string][]byte) (*Project, error) {
 	}
 	for _, name := range Names(p.Processes) {
 		if err := visit(name); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	h := sha256.New()
-	fmt.Fprintln(h, CodecVersion)
-	for _, path := range Names(p.Files) {
-		b := p.Files[path]
-		fmt.Fprintf(h, "%d:%s%d:", len(path), path, len(b))
-		h.Write(b)
-	}
-	p.Revision = fmt.Sprintf("%x", h.Sum(nil))
-	return p, nil
+	return nil
 }
 
-func parseProcess(path string, b []byte) (*Process, error) {
-	doc, err := samples.ParseYAML(b)
+// addExample resolves an example against the project-wide function set. An
+// example may be written in any module and name any declared function.
+func (p *Project) addExample(item pending) error {
+	ex := item.example
+	where := fmt.Sprintf("%s:%d", p.Processes[item.process].Module, ex.Line)
+	target := ex.Call.Process
+	if target == "" {
+		target = item.process
+	}
+	qualified := target + "." + ex.Call.Function
+	proc := p.Processes[target]
+	if proc == nil {
+		return fmt.Errorf("%s: example names unknown process %s", where, target)
+	}
+	f := proc.Functions[ex.Call.Function]
+	if f == nil {
+		return fmt.Errorf("%s: example names unknown function %s; declare it, e.g. `def %s(...): pass`", where, qualified, ex.Call.Function)
+	}
+	input, err := f.BindArgs(qualified, ex.Call.Args, ex.Call.Names, ex.Call.Values)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("%s: %w", where, err)
 	}
-	fields, err := samples.Fields(doc.Content[0], "version", "name", "description", "module", "uses", "functions")
-	if err != nil {
-		return nil, err
-	}
-	version := fields["version"]
-	if version == nil || version.Tag != "!!int" || version.Value != "1" {
-		return nil, fmt.Errorf("version must be 1")
-	}
-	name, err := samples.Text(fields["name"])
-	if err != nil || !ValidName(name) {
-		return nil, fmt.Errorf("invalid process name %q", name)
-	}
-	p := &Process{Name: name, ManifestPath: path, Document: doc, Functions: map[string]*Function{}}
-	if n := fields["description"]; n != nil {
-		p.Description, err = samples.Text(n)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if n := fields["module"]; n != nil {
-		p.Module, err = samples.Text(n)
-		if err != nil {
-			return nil, err
-		}
-		if filepath.IsAbs(p.Module) {
-			return nil, fmt.Errorf("module path must be relative")
-		}
-	}
-	if n := fields["uses"]; n != nil {
-		if n.Kind != yaml.SequenceNode {
-			return nil, samples.At(n, "uses must be a list")
-		}
-		seen := map[string]bool{}
-		for _, item := range n.Content {
-			dep, err := samples.Text(item)
-			if err != nil || !ValidName(dep) || seen[dep] {
-				return nil, samples.At(item, "invalid or duplicate dependency")
+	key := samples.Key(input)
+	if _, ok := f.Index[key]; ok {
+		for _, prior := range f.Examples {
+			if samples.Key(prior.Input) == key {
+				return fmt.Errorf("%s: duplicate example for %s; first written at %s:%d", where, FormatCall(qualified, f.Inputs, input), prior.Path, prior.Line)
 			}
-			seen[dep] = true
-			p.Uses = append(p.Uses, dep)
 		}
 	}
-	n := fields["functions"]
-	if n == nil || n.Kind != yaml.SequenceNode {
-		return nil, fmt.Errorf("functions must be a list")
-	}
-	for _, entry := range n.Content {
-		f, err := parseFunction(entry, doc, path)
-		if err != nil {
-			return nil, err
-		}
-		if p.Functions[f.Name] != nil {
-			return nil, samples.At(entry, "duplicate function %s", f.Name)
-		}
-		p.Functions[f.Name] = f
-	}
-	return p, nil
+	f.Index[key] = ex.Want
+	f.Examples = append(f.Examples, Example{Input: input, Output: ex.Want, Path: p.Processes[item.process].Module, Line: ex.Line, EndLine: ex.EndLine})
+	return nil
 }
 
-func parseFunction(n, doc *yaml.Node, path string) (*Function, error) {
-	fields, err := samples.Fields(n, "function", "description", "implementation", "examples")
-	if err != nil {
-		return nil, err
-	}
-	s, err := samples.Text(fields["function"])
-	if err != nil {
-		return nil, err
-	}
-	name, in, out, err := Signature(s)
-	if err != nil {
-		return nil, err
-	}
-	f := &Function{Name: name, Signature: s, InputLabel: in, OutputLabel: out, Index: map[string]any{}, Document: doc, Node: n, ExamplePath: path}
-	if n := fields["description"]; n != nil {
-		f.Description, err = samples.Text(n)
-		if err != nil {
-			return nil, err
+func docString(stmts []syntax.Stmt) (string, bool) {
+	if len(stmts) > 0 {
+		if expr, ok := stmts[0].(*syntax.ExprStmt); ok {
+			if lit, ok := expr.X.(*syntax.Literal); ok && lit.Token == syntax.STRING {
+				if s, ok := lit.Value.(string); ok {
+					return strings.TrimSpace(s), true
+				}
+			}
 		}
 	}
-	if n := fields["implementation"]; n != nil {
-		f.Implementation, err = samples.Text(n)
-		if err != nil || !ValidName(f.Implementation) {
-			return nil, samples.At(n, "invalid implementation name")
-		}
-	}
-	seq := fields["examples"]
-	if seq == nil || seq.Kind != yaml.SequenceNode {
-		return nil, samples.At(n, "examples must be a list")
-	}
-	for _, row := range seq.Content {
-		pair, err := samples.Fields(row, in, out)
-		if err != nil {
-			return nil, err
-		}
-		if len(pair) != 2 {
-			return nil, samples.At(row, "example requires %s and %s", in, out)
-		}
-		input, err := samples.YAMLValue(pair[in])
-		if err != nil {
-			return nil, err
-		}
-		output, err := samples.YAMLValue(pair[out])
-		if err != nil {
-			return nil, err
-		}
-		if _, err := samples.Canonical(input); err != nil {
-			return nil, samples.At(pair[in], "%v", err)
-		}
-		if _, err := samples.Canonical(output); err != nil {
-			return nil, samples.At(pair[out], "%v", err)
-		}
-		key := samples.Key(input)
-		if _, ok := f.Index[key]; ok {
-			return nil, samples.At(row, "duplicate input %s", key)
-		}
-		f.Index[key] = output
-		f.Examples = append(f.Examples, samples.Pair{Input: input, Output: output})
-	}
-	return f, nil
+	return "", false
 }
 
 func (p *Project) Function(qualified string) (*Process, *Function, error) {

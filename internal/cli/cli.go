@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"golang.org/x/term"
@@ -18,22 +17,22 @@ import (
 	"park/internal/engine"
 	"park/internal/project"
 	"park/internal/samples"
+	"park/internal/source"
 )
 
 const usage = `park — example-driven Starlark functions
 
 Usage: park [--root PATH] COMMAND [FLAGS] [OPERANDS]
 
-  init [DIR]                    Create an empty project and catalog
-  register FILE.star            Generate/refresh one YAML sidecar
-  process add|remove            Register or remove a process
-  function add|remove           Register or remove an exported function
-  example add|remove            Add or remove a named input/output pair
-  list                          List processes and function readiness
-  run --input JSON P.fn         Run a function (optional --interactive)
-  test [P.fn]                   Check authored outputs against bodies
-  build                         Validate and regenerate park.html
+  init [DIR]                        Create an empty project and catalog
+  list                              List processes and function readiness
+  run 'P.fn(args)'                  Run a call (optional --interactive)
+  example add 'P.fn(args) == value' Add an example to the function's module
+  example remove 'P.fn(args)'       Remove an example wherever it is written
+  test [P.fn]                       Check examples against implementations
+  build                             Validate and regenerate park.html
 
+Calls use Starlark literals: 'Math.add(9, right=6)', 'RomanParse.parse("ix")'.
 Use park COMMAND --help for flags. Flags precede positional operands.
 `
 
@@ -101,25 +100,6 @@ func exact(fs *flag.FlagSet, n int) error {
 	}
 	return nil
 }
-func supplied(fs *flag.FlagSet, name string) bool {
-	found := false
-	fs.Visit(func(f *flag.Flag) {
-		if f.Name == name {
-			found = true
-		}
-	})
-	return found
-}
-func value(fs *flag.FlagSet, name, raw string) (any, error) {
-	if !supplied(fs, name) {
-		return nil, fail(2, "missing --%s JSON", name)
-	}
-	v, err := samples.ParseJSON([]byte(raw))
-	if err != nil {
-		return nil, fail(2, "--%s: %v", name, err)
-	}
-	return v, nil
-}
 func (c *CLI) execute(ctx context.Context, args []string) error {
 	global := c.flags("park")
 	rootFlag := global.String("root", "", "Project root (defaults to current directory)")
@@ -141,7 +121,7 @@ func (c *CLI) execute(ctx context.Context, args []string) error {
 		return c.init(args, *rootFlag)
 	}
 	switch command {
-	case "list", "run", "test", "build", "register", "process", "function", "example":
+	case "list", "run", "test", "build", "example":
 	default:
 		return fail(2, "unknown command %q", command)
 	}
@@ -156,23 +136,14 @@ func (c *CLI) execute(ctx context.Context, args []string) error {
 			return c.run(ctx, nil, args)
 		case "test":
 			return c.test(ctx, nil, args)
-		case "register":
-			return c.register(nil, args)
 		case "build":
 			return parse(c.flags("build"), args)
-		case "process", "function", "example":
+		case "example":
 			if helpRequested {
-				fmt.Fprintf(c.Out, "Usage: park %s add|remove [FLAGS] [OPERANDS]\nUse park %s add --help or park %s remove --help.\n", command, command, command)
+				fmt.Fprintln(c.Out, "Usage: park example add 'P.fn(args) == value' | park example remove 'P.fn(args)'")
 				return nil
 			}
-			switch command {
-			case "process":
-				return c.process(nil, args)
-			case "function":
-				return c.function(nil, args)
-			case "example":
-				return c.example(nil, args)
-			}
+			return c.example(nil, args)
 		}
 	}
 	var root string
@@ -185,14 +156,11 @@ func (c *CLI) execute(ctx context.Context, args []string) error {
 			return e
 		}
 		root, err = project.Discover(cwd)
-		if err != nil && command == "register" {
-			root, err = project.Root(cwd)
-		}
 	}
 	if err != nil {
 		return err
 	}
-	mutating := command == "build" || command == "register" || command == "process" || command == "function" || command == "example"
+	mutating := command == "build" || command == "example"
 	// Interactive runs may persist an answer and therefore hold the mutation lock.
 	exclusive := mutating
 	if command == "run" {
@@ -234,14 +202,8 @@ func (c *CLI) execute(ctx context.Context, args []string) error {
 		}
 		fmt.Fprintln(c.Out, "Built park.html")
 		return nil
-	case "register":
-		return c.register(p, args)
 	case "list":
 		return c.list(p, args)
-	case "process":
-		return c.process(p, args)
-	case "function":
-		return c.function(p, args)
 	case "example":
 		return c.example(p, args)
 	case "run":
@@ -276,15 +238,6 @@ func (c *CLI) init(args []string, rootFlag string) error {
 	root, err := project.Root(target)
 	if err != nil {
 		return err
-	}
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if strings.HasSuffix(entry.Name(), ".yaml") || strings.HasSuffix(entry.Name(), ".yml") {
-			return fail(2, "init refuses to overwrite existing sidecar %s", entry.Name())
-		}
 	}
 	for _, name := range []string{"park.html", ".park"} {
 		if _, err := os.Lstat(filepath.Join(root, name)); err == nil {
@@ -347,176 +300,32 @@ func (c *CLI) list(p *project.Project, args []string) error {
 	}
 	return nil
 }
-func (c *CLI) process(p *project.Project, args []string) error {
-	if len(args) == 0 {
-		return fail(2, "process requires add or remove")
+
+// call parses a call operand and binds it to the named function.
+func call(p *project.Project, text string) (string, map[string]any, error) {
+	parsed, err := source.ParseCall(text)
+	if err != nil {
+		return "", nil, fail(2, "%v", err)
 	}
-	fs := c.flags("process " + args[0])
-	switch args[0] {
-	case "add":
-		name := fs.String("name", "", "Process name")
-		module := fs.String("module", "", "Project-relative .star source path")
-		uses := fs.String("uses", "", "Comma-separated dependency names")
-		description := fs.String("description", "", "Process description")
-		if err := parse(fs, args[1:]); err != nil {
-			return err
-		}
-		if err := exact(fs, 0); err != nil {
-			return err
-		}
-		if !project.ValidName(*name) {
-			return fail(2, "invalid process name %q", *name)
-		}
-		if p.Processes[*name] != nil {
-			return fail(2, "process already exists: %s", *name)
-		}
-		rel := *name + ".yaml"
-		if _, ok := p.Files[rel]; ok {
-			return fail(2, "manifest path already exists: %s", rel)
-		}
-		doc := samples.ValueNode(map[string]any{})
-		project.SetField(doc, "version", samples.ValueNode(1))
-		project.SetField(doc, "name", samples.ValueNode(*name))
-		if *description != "" {
-			project.SetField(doc, "description", samples.ValueNode(*description))
-		}
-		project.SetField(doc, "uses", samples.ValueNode([]string{}))
-		project.SetField(doc, "functions", samples.ValueNode([]any{}))
-		if *module != "" {
-			if filepath.IsAbs(*module) {
-				return fail(2, "--module must be project-relative")
-			}
-			path, err := project.SafePath(p.Root, *module)
-			if err != nil {
-				return err
-			}
-			normalized, err := filepath.Rel(p.Root, path)
-			if err != nil {
-				return err
-			}
-			project.SetField(doc, "module", samples.ValueNode(normalized))
-			rel = strings.TrimSuffix(normalized, ".star") + ".yaml"
-		}
-		if _, exists := p.Files[rel]; exists {
-			return fail(2, "sidecar already exists: %s", rel)
-		}
-		if *uses != "" {
-			project.SetField(doc, "uses", samples.ValueNode(strings.Split(*uses, ",")))
-		}
-		b, err := samples.EncodeYAML(doc)
-		if err != nil {
-			return err
-		}
-		if err := c.publish(p, map[string][]byte{rel: b}); err != nil {
-			return err
-		}
-		fmt.Fprintf(c.Out, "Added process %s\n", *name)
-		return nil
-	case "remove":
-		if err := parse(fs, args[1:]); err != nil {
-			return err
-		}
-		if err := exact(fs, 1); err != nil {
-			return err
-		}
-		name := fs.Arg(0)
-		proc := p.Processes[name]
-		if proc == nil {
-			return fail(2, "unknown process %s", name)
-		}
-		for _, other := range p.Processes {
-			for _, dep := range other.Uses {
-				if dep == name {
-					return fail(2, "%s is used by %s", name, other.Name)
-				}
-			}
-		}
-		edits := map[string][]byte{proc.ManifestPath: nil}
-		if err := c.publish(p, edits); err != nil {
-			return err
-		}
-		fmt.Fprintf(c.Out, "Removed process %s\n", name)
-		return nil
-	default:
-		return fail(2, "unknown process operation %q", args[0])
-	}
+	return bind(p, parsed)
 }
-func (c *CLI) function(p *project.Project, args []string) error {
-	if len(args) == 0 {
-		return fail(2, "function requires add or remove")
+
+func bind(p *project.Project, parsed *source.Call) (string, map[string]any, error) {
+	if parsed.Process == "" {
+		return "", nil, fail(2, "name the process too, e.g. Process.%s(...)", parsed.Function)
 	}
-	fs := c.flags("function " + args[0])
-	switch args[0] {
-	case "add":
-		signature := fs.String("signature", "", "Signature: name(input) output")
-		implementation := fs.String("implementation", "", "Starlark implementation name")
-		description := fs.String("description", "", "Function description")
-		if err := parse(fs, args[1:]); err != nil {
-			return err
-		}
-		if err := exact(fs, 1); err != nil {
-			return err
-		}
-		parts := strings.Split(fs.Arg(0), ".")
-		if len(parts) != 2 {
-			return fail(2, "expected Process.function")
-		}
-		proc := p.Processes[parts[0]]
-		if proc == nil {
-			return fail(2, "unknown process %s", parts[0])
-		}
-		name, _, _, err := project.Signature(*signature)
-		if err != nil {
-			return err
-		}
-		if name != parts[1] {
-			return fail(2, "signature does not match export %s", parts[1])
-		}
-		if proc.Functions[name] != nil {
-			return fail(2, "function already exists: %s", fs.Arg(0))
-		}
-		functions := project.Field(proc.Document, "functions")
-		functions.Content = append(functions.Content, project.FunctionNode(*signature, *description, *implementation))
-		manifest, err := samples.EncodeYAML(proc.Document)
-		if err != nil {
-			return err
-		}
-		if err := c.publish(p, map[string][]byte{proc.ManifestPath: manifest}); err != nil {
-			return err
-		}
-		fmt.Fprintf(c.Out, "Added function %s\n", fs.Arg(0))
-		return nil
-	case "remove":
-		if err := parse(fs, args[1:]); err != nil {
-			return err
-		}
-		if err := exact(fs, 1); err != nil {
-			return err
-		}
-		proc, f, err := p.Function(fs.Arg(0))
-		if err != nil {
-			return err
-		}
-		functions := project.Field(proc.Document, "functions")
-		for i, n := range functions.Content {
-			if n == f.Node {
-				functions.Content = append(functions.Content[:i], functions.Content[i+1:]...)
-				break
-			}
-		}
-		b, err := samples.EncodeYAML(proc.Document)
-		if err != nil {
-			return err
-		}
-		if err := c.publish(p, map[string][]byte{proc.ManifestPath: b}); err != nil {
-			return err
-		}
-		fmt.Fprintf(c.Out, "Removed function %s\n", fs.Arg(0))
-		return nil
-	default:
-		return fail(2, "unknown function operation %q", args[0])
+	qualified := parsed.Process + "." + parsed.Function
+	_, f, err := p.Function(qualified)
+	if err != nil {
+		return "", nil, fail(2, "%v", err)
 	}
+	input, err := f.BindArgs(qualified, parsed.Args, parsed.Names, parsed.Values)
+	if err != nil {
+		return "", nil, fail(2, "%v", err)
+	}
+	return qualified, input, nil
 }
+
 func (c *CLI) example(p *project.Project, args []string) error {
 	if len(args) == 0 {
 		return fail(2, "example requires add or remove")
@@ -526,47 +335,43 @@ func (c *CLI) example(p *project.Project, args []string) error {
 		return fail(2, "unknown example operation %q", op)
 	}
 	fs := c.flags("example " + op)
-	in := fs.String("input", "", "JSON input")
-	var out *string
-	if op == "add" {
-		out = fs.String("output", "", "JSON output")
-	}
 	if err := parse(fs, args[1:]); err != nil {
 		return err
 	}
 	if err := exact(fs, 1); err != nil {
 		return err
 	}
-	input, err := value(fs, "input", *in)
-	if err != nil {
-		return err
-	}
-	_, f, err := p.Function(fs.Arg(0))
-	if err != nil {
-		return err
-	}
+	var path string
 	var b []byte
+	var err error
 	if op == "add" {
-		output, e := value(fs, "output", *out)
-		if e != nil {
-			return e
+		parsed, want, perr := source.ParseExample(fs.Arg(0))
+		if perr != nil {
+			return fail(2, "%v", perr)
 		}
-		b, err = project.AddExample(f, input, output)
+		qualified, input, berr := bind(p, parsed)
+		if berr != nil {
+			return berr
+		}
+		path, b, err = project.AddExample(p, qualified, input, want)
 	} else {
-		b, err = project.RemoveExample(f, input)
+		qualified, input, cerr := call(p, fs.Arg(0))
+		if cerr != nil {
+			return cerr
+		}
+		path, b, err = project.RemoveExample(p, qualified, input)
 	}
 	if err != nil {
 		return err
 	}
-	if err := c.publish(p, map[string][]byte{f.ExamplePath: b}); err != nil {
+	if err := c.publish(p, map[string][]byte{path: b}); err != nil {
 		return err
 	}
-	fmt.Fprintf(c.Out, "%s example for %s\n", map[string]string{"add": "Added", "remove": "Removed"}[op], fs.Arg(0))
+	fmt.Fprintf(c.Out, "%s example in %s\n", map[string]string{"add": "Added", "remove": "Removed"}[op], path)
 	return nil
 }
 func (c *CLI) run(ctx context.Context, p *project.Project, args []string) error {
 	fs := c.flags("run")
-	raw := fs.String("input", "", "JSON input")
 	interactive := fs.Bool("interactive", false, "Prompt for unresolved outputs when stdin is a terminal")
 	if err := parse(fs, args); err != nil {
 		return err
@@ -574,12 +379,8 @@ func (c *CLI) run(ctx context.Context, p *project.Project, args []string) error 
 	if err := exact(fs, 1); err != nil {
 		return err
 	}
-	input, err := value(fs, "input", *raw)
+	qualified, input, err := call(p, fs.Arg(0))
 	if err != nil {
-		return err
-	}
-	qualified := fs.Arg(0)
-	if _, _, err := p.Function(qualified); err != nil {
 		return err
 	}
 	scanner := bufio.NewScanner(c.In)
@@ -593,11 +394,10 @@ func (c *CLI) run(ctx context.Context, p *project.Project, args []string) error 
 		output, err := e.Run(callCtx, qualified, input)
 		cancel()
 		if err == nil {
-			b, err := samples.Canonical(output)
-			if err != nil {
+			if _, err := samples.Canonical(output); err != nil {
 				return fail(1, "%v", err)
 			}
-			fmt.Fprintln(c.Out, string(b))
+			fmt.Fprintln(c.Out, samples.Literal(output))
 			return nil
 		}
 		var unresolved *engine.Unresolved
@@ -611,7 +411,7 @@ func (c *CLI) run(ctx context.Context, p *project.Project, args []string) error 
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(c.Err, "%s\nEnter JSON %s (EOF cancels): ", unresolved.Error(), f.OutputLabel)
+		fmt.Fprintf(c.Err, "%s\nEnter %s as a literal, e.g. \"text\", 9, or [\"a\"] (EOF cancels): ", unresolved.Error(), f.Output)
 		type lineResult struct {
 			bytes []byte
 			ok    bool
@@ -634,7 +434,7 @@ func (c *CLI) run(ctx context.Context, p *project.Project, args []string) error 
 			}
 			return unresolved
 		}
-		output, err = samples.ParseJSON(answer.bytes)
+		output, err = source.ParseValue(string(answer.bytes))
 		if err != nil {
 			fmt.Fprintln(c.Err, "Invalid output:", err)
 			continue
@@ -642,11 +442,11 @@ func (c *CLI) run(ctx context.Context, p *project.Project, args []string) error 
 		if err := ctx.Err(); err != nil {
 			return fail(1, "%v", err)
 		}
-		b, err := project.AddExample(f, unresolved.Input, output)
+		path, b, err := project.AddExample(p, unresolved.Function, unresolved.Input, output)
 		if err != nil {
 			return err
 		}
-		if err := c.publish(p, map[string][]byte{f.ExamplePath: b}); err != nil {
+		if err := c.publish(p, map[string][]byte{path: b}); err != nil {
 			return err
 		}
 		p, err = project.LoadWith(p.Root, nil)
@@ -682,7 +482,7 @@ func (c *CLI) test(ctx context.Context, p *project.Project, args []string) error
 				continue
 			}
 			f := proc.Functions[fn]
-			if f.Implementation == "" {
+			if !f.Implemented {
 				records += len(f.Examples)
 				fmt.Fprintf(c.Out, "DATA %s: %d example-only records\n", qualified, len(f.Examples))
 				continue
@@ -700,10 +500,10 @@ func (c *CLI) test(ctx context.Context, p *project.Project, args []string) error
 				cancel()
 				if err != nil {
 					failures++
-					fmt.Fprintf(c.Err, "FAIL %s(%s): %v\n", qualified, samples.Key(pair.Input), err)
+					fmt.Fprintf(c.Err, "FAIL %s (%s:%d): %v\n", engine.FormatCall(qualified, f.Inputs, pair.Input), pair.Path, pair.Line, err)
 				} else if samples.Key(output) != samples.Key(pair.Output) {
 					failures++
-					fmt.Fprintf(c.Err, "FAIL %s(%s): got %s; expected %s\n", qualified, samples.Key(pair.Input), samples.Key(output), samples.Key(pair.Output))
+					fmt.Fprintf(c.Err, "FAIL %s (%s:%d): got %s; expected %s\n", engine.FormatCall(qualified, f.Inputs, pair.Input), pair.Path, pair.Line, samples.Literal(output), samples.Literal(pair.Output))
 				}
 			}
 		}
@@ -712,30 +512,5 @@ func (c *CLI) test(ctx context.Context, p *project.Project, args []string) error
 	if failures > 0 {
 		return fail(1, "tests failed")
 	}
-	return nil
-}
-
-func (c *CLI) register(p *project.Project, args []string) error {
-	fs := c.flags("register")
-	name := fs.String("name", "", "Process name (default: module basename in PascalCase)")
-	uses := fs.String("uses", "", "Additional comma-separated dependencies")
-	if err := parse(fs, args); err != nil {
-		return err
-	}
-	if err := exact(fs, 1); err != nil {
-		return err
-	}
-	var deps []string
-	if *uses != "" {
-		deps = strings.Split(*uses, ",")
-	}
-	path, b, err := project.Generate(p, fs.Arg(0), *name, deps)
-	if err != nil {
-		return err
-	}
-	if err := c.publish(p, map[string][]byte{path: b}); err != nil {
-		return err
-	}
-	fmt.Fprintf(c.Out, "Registered %s\n", path)
 	return nil
 }

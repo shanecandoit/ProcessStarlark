@@ -1,5 +1,10 @@
 # Sample project ideas for Park
 
+> **Format note:** these sketches predate [D11](design.md#d11-no-yaml-sidecars)
+> and still show examples as YAML sidecar rows. In the current format each row
+> becomes an `example:` line in the `.star` module, e.g.
+> `example: canonical("signin") == "auth"`.
+
 The strongest demos have a useful little workflow, several cooperating
 processes, and a place where an unknown input can become a new example. A math
 exercise shows evaluation; a small tool that gains a new vocabulary entry shows
@@ -15,9 +20,9 @@ and authored examples. `park register FILE.star` generates or refreshes it while
 preserving authored pairs. `park.html` and the disposable `.cache/` also live in
 that directory; `.park/` holds the CLI lock and recovery state.
 
-The YAML below shows selected sidecars. Each function entry names one input and
-one output; its rows contain that pair without IDs. Objects hold inputs with
-several fields. Add descriptions and implementation references in the same
+The YAML below shows selected sidecars. Each function entry names its inputs
+and one output; each row contains those fields, without IDs. Input names match
+the implementation's parameters. Add descriptions and implementation references in the same
 entry. See the [reference](reference.md) and the [implementation plan](../plan.md)
 for the full contract.
 
@@ -391,13 +396,11 @@ version: 1
 name: Portions
 module: portions.star
 functions:
-  - function: scale(request) grams
+  - function: scale(grams, from_servings, to_servings) scaled_grams
     implementation: scale
     examples:
-      - request: {grams: 300, from_servings: 2, to_servings: 4}
-        grams: 600
-      - request: {grams: 300, from_servings: 2, to_servings: 1}
-        grams: 150
+      - {grams: 300, from_servings: 2, to_servings: 4, scaled_grams: 600}
+      - {grams: 300, from_servings: 2, to_servings: 1, scaled_grams: 150}
 ```
 
 `units.yaml`:
@@ -414,8 +417,8 @@ functions:
       - {quantity: {amount: 250, unit: "g"}, grams: 250}
 ```
 
-Each function receives one object, rather than several positional arguments. Add
-zero-serving and indivisible-quantity examples. Keep unit conversions explicit
+`scale` takes three named inputs, while `to_grams` takes one structured
+quantity object; both are fine. Add zero-serving and indivisible-quantity examples. Keep unit conversions explicit
 and ingredient-independent. Converting cups to grams would need an ingredient's
 density as an input or lookup and is a later extension.
 
@@ -438,23 +441,21 @@ name: Robot
 module: robot.star
 uses: [Directions, Grid]
 functions:
-  - function: step(request) state
+  - function: step(state, direction) next_state
     implementation: step
     examples:
-      - request:
-          state: {x: 0, y: 0, width: 3, height: 3}
-          direction: "east"
-        state: {x: 1, y: 0, width: 3, height: 3}
-      - request:
-          state: {x: 2, y: 0, width: 3, height: 3}
-          direction: "east"
-        state: {x: 2, y: 0, width: 3, height: 3}
+      - state: {x: 0, y: 0, width: 3, height: 3}
+        direction: "east"
+        next_state: {x: 1, y: 0, width: 3, height: 3}
+      - state: {x: 2, y: 0, width: 3, height: 3}
+        direction: "east"
+        next_state: {x: 2, y: 0, width: 3, height: 3}
 ```
 
 Define `north` as decreasing y. Out-of-bounds moves leave the state unchanged.
 Teach `right` as an alias for `east` in an example-only direction vocabulary
 within its process sidecar. Then replay a move list through `Robot.walk`,
-passing starting state and moves in one object. Identical inputs produce
+passing the starting state and the moves as two named inputs. Identical inputs produce
 identical results. Obstacles are a later extension.
 
 ## A reusable demo story
@@ -482,8 +483,8 @@ naturally between implemented transformations and example-only knowledge.
 For example, teach an alias directly or remove it by input:
 
 ```sh
-park example add --input '"signin"' --output '"auth"' ComponentNames.canonical
-park example remove --input '"signin"' ComponentNames.canonical
+park example add 'ComponentNames.canonical("signin") == "auth"'
+park example remove 'ComponentNames.canonical("signin")'
 ```
 
 Example lookup is exact after canonical encoding. Adding `"signin"` does not
