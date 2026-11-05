@@ -56,10 +56,10 @@ Related ideas:
 ## What Park is not
 
 Park isn't a new general-purpose language. It's a small runtime and project
-format that pairs ordinary [Starlark](https://github.com/bazelbuild/starlark)
-modules with YAML example files. It suits small, pure, rule-like functions that
-people need to read, check, and extend by adding cases. It isn't meant for I/O,
-large programs, or performance-critical code.
+format that groups [Starlark](https://github.com/bazelbuild/starlark) functions
+in stateless Process namespaces with YAML example files. It suits small, pure,
+rule-like functions that people need to read, check, and extend by adding cases.
+It isn't meant for I/O, large programs, or performance-critical code.
 
 ## Known tension
 

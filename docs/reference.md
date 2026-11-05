@@ -5,7 +5,7 @@ what you need to use the `park` CLI.
 
 ## Core concepts
 
-- **Process:** a named group of functions, such as `RomanParse`. It's one `.star`
+- **Process:** a stateless namespace of functions, such as `RomanParse`. It's one `.star`
   module plus one `.yaml` sidecar, and it declares which other processes it
   `uses`.
 - **Function:** takes exactly one input value and returns one output value. It's
@@ -51,8 +51,8 @@ roman_add.yaml
 park.html           # Generated offline catalog
 ```
 
-Commands find the project by searching upward from the current directory.
-`--root PATH` selects another project.
+Commands use only the current directory as the project root; they never search
+parent directories. `--root PATH` explicitly selects another project.
 
 ### Sidecar (`roman_parse.yaml`)
 
@@ -109,10 +109,39 @@ example lookup.
 
 ### Modules
 
-Each implementation is an ordinary top-level Starlark function that takes
-exactly one positional parameter, with no defaults, `*args`, or keyword
-arguments. Names beginning with `_` are private helpers. Module and function
-docstrings become descriptions.
+Write one `Process Name { ... }` namespace per `.star` file:
+
+```python
+Process RomanAdd {
+    """Add two Roman numerals."""
+
+    def eval(text):
+        terms = text.split(" + ")
+        return RomanParse.parse(terms[0]) + RomanParse.parse(terms[1])
+}
+```
+
+A Process is a stateless namespace for organizing functions, like a class with
+just a name and functions. It has no instances, `self`, fields, inheritance,
+or shared state. The block permits function definitions and an optional opening
+docstring; assignments belong inside functions. Pass any evolving state as input
+and return its replacement as output. Nested Process blocks are unsupported.
+The opening declaration and closing `}` occupy their own lines at column 1.
+Functions can be indented as shown or aligned with the Process declaration.
+Inside functions, ordinary Starlark indentation and expressions apply.
+
+Each exported implementation takes exactly one positional parameter, with no
+defaults, `*args`, or keyword arguments. Names beginning with `_` are private
+helpers, called by their bare names. Process and function docstrings become
+descriptions. Call another process with `RomanParse.parse(text)` after declaring
+it in `uses`. Within the current process, both `eval(text)` and
+`RomanAdd.eval(text)` use example-aware dispatch and enforce readiness.
+
+The declaration supplies the process name and must match its YAML sidecar.
+`Process` is optional: regular `.star` files containing top-level functions are
+also supported, with examples and catalog entries supplied by their YAML
+sidecars. Both forms use Park's pure-function runtime, including its restrictions
+on `load()`, top-level execution, and supported value types.
 
 ## Starting a project
 
@@ -133,8 +162,10 @@ park list
 
 - Public functions become exports with `name(in) out` signatures and empty
   example lists.
-- The process name comes from the file name (`roman_parse.star` becomes
-  `RomanParse`); `--name` overrides it.
+- The process name comes from `Process Name`. An explicit `--name` and an
+  existing sidecar must agree with the declaration. For regular modules without
+  a declaration, the file name supplies the default (`roman_parse.star` becomes
+  `RomanParse`), and `--name` overrides it.
 - References to already registered processes are detected as dependencies, so
   register dependencies first. `--uses A,B` adds dependencies explicitly.
 - Rerunning `register` refreshes metadata without discarding signatures,
@@ -175,8 +206,7 @@ build                         Validate and regenerate park.html
 - **v2 call samples:** keep each function's first few and most recent few
   calls as canonical JSON records, to show real usage. These samples are
   separate from authored examples and never count toward readiness.
-- **Future language design:** possibly `Process { ... }` blocks, inline
-  `example` assertions, return labels in source syntax, nested processes, and
-  synthesizing implementations from examples. In v1, processes are flat YAML
-  sidecars plus ordinary `.star` functions, and the interactive prompt accepts
-  only an output value, not code.
+- **Future language design:** inline `example` assertions, return labels in
+  source syntax, nested processes, and synthesizing implementations from
+  examples. Processes currently use `.star` namespace blocks with YAML
+  sidecars, and the interactive prompt accepts only an output value, not code.

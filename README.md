@@ -27,16 +27,27 @@ guesses.
 Python:
 
 ```python
-def parse(text):
-    values = {"i": 1, "v": 5, "x": 10}
-    total = 0
-    previous = 0
-    for index in range(len(text) - 1, -1, -1):   # read right to left
-        value = values[text[index]]
-        total += -value if value < previous else value   # "iv" means 5 - 1
-        previous = value
-    return total
+Process RomanParse {
+    def parse(text):
+        values = {"i": 1, "v": 5, "x": 10}
+        total = 0
+        previous = 0
+        for index in range(len(text) - 1, -1, -1):   # read right to left
+            value = values[text[index]]
+            total += -value if value < previous else value   # "iv" means 5 - 1
+            previous = value
+        return total
+}
 ```
+
+`Process RomanParse` is a stateless namespace for organizing functions. Think
+of it as a class with just a name and functions: no class features or shared
+state. Variables belong inside functions, and callers use
+`RomanParse.parse(text)`.
+
+`Process` is an optional extension to Starlark. Regular `.star` files with
+top-level functions work too, with examples and catalog entries supplied by
+their YAML sidecars. Both forms use Park's pure-function runtime.
 
 Now `xiv` gives `14`. Your examples are still in charge:
 
@@ -63,13 +74,18 @@ folder, run:
 
 ```sh
 go build -o park ./cmd/park
-./park --root fixtures/roman run --input '"ix"' RomanParse.parse    # 9, from an example
-./park --root fixtures/roman run --input '"xiv"' RomanParse.parse   # 14, from the code
-./park --root fixtures/roman test                                   # code vs. examples
+./park build                                          # generate park.html
+./park test                                           # code vs. examples
+./park run --input '"ix"' RomanParse.parse              # 9, from an example
+./park run --input '"xiv"' RomanParse.parse             # 14, from the code
+./park run --input '"ix + vi"' RomanAdd.eval            # 15, from an example
+./park run --input '"iv + i"' RomanAdd.eval             # 5, from the code
 ```
 
-Then open `fixtures/roman/park.html` in a browser to see every function and its
-examples.
+Then open `park.html` in this folder to see every function and its examples.
+The root Roman demo includes two examples for each implementation. A separate
+copy in `fixtures/roman/` is available for tests and experimentation; select it
+with `--root fixtures/roman` before the command.
 
 ## Learn more
 

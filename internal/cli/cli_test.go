@@ -74,6 +74,35 @@ func read(t *testing.T, root, path string) string {
 	return string(b)
 }
 
+func TestDefaultRootStaysInCurrentDirectory(t *testing.T) {
+	parent := fixture(t)
+	write(t, parent, "training.yaml", "learning_rate: 0.0002\n")
+	child := filepath.Join(parent, "child")
+	if err := os.Mkdir(child, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(child)
+	var out, errout bytes.Buffer
+	c := &CLI{In: strings.NewReader(""), Out: &out, Err: &errout}
+	if code := c.Run(context.Background(), []string{"test"}); code != 2 || !strings.Contains(errout.String(), "no Park project found in current directory") {
+		t.Fatalf("expected local project error, got %d: %s", code, errout.String())
+	}
+	if _, err := os.Stat(filepath.Join(parent, ".park")); !os.IsNotExist(err) {
+		t.Fatalf("default discovery touched parent project state: %v", err)
+	}
+	if err := os.Remove(filepath.Join(parent, "training.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	// A parent project is accessible when explicitly selected.
+	success(t, parent, "test")
+	t.Chdir(parent)
+	out.Reset()
+	errout.Reset()
+	if code := c.Run(context.Background(), []string{"test"}); code != 0 || !strings.Contains(out.String(), "0 failures") {
+		t.Fatalf("current-directory project failed: %d: %s", code, errout.String())
+	}
+}
+
 func TestRunCacheAndBodyVerification(t *testing.T) {
 	root := fixture(t)
 	success(t, root, "build")
@@ -259,21 +288,85 @@ func TestDependencyTeachingRetriesFreshSnapshot(t *testing.T) {
 	}
 }
 func TestSameProcessDispatchCannotBypassReadiness(t *testing.T) {
-	root := t.TempDir()
-	success(t, root, "init")
-	write(t, root, "local.star", "def inner(value):\n    return value + 1\n\ndef outer(value):\n    return inner(value)\n")
-	success(t, root, "register", "local.star")
-	for _, fn := range []string{"inner", "outer"} {
-		for _, n := range []int{1, 2} {
-			success(t, root, "example", "add", "--input", fmt.Sprint(n), "--output", fmt.Sprint(n+1), "Local."+fn)
-		}
-	}
-	success(t, root, "example", "remove", "--input", "2", "Local.inner")
-	code, _, err := invoke(t, root, false, "", "run", "--input", "3", "Local.outer")
-	if code != 1 || !strings.Contains(err, "Local.inner needs examples") {
-		t.Fatalf("inner bypassed dispatch: %d %s", code, err)
+	for label, source := range map[string]string{
+		"regular":   "def inner(value):\n    return value + 1\n\ndef outer(value):\n    return inner(value)\n",
+		"bare":      "Process Local {\n    def inner(value):\n        return value + 1\n    def outer(value):\n        return inner(value)\n}\n",
+		"qualified": "Process Local {\n    def inner(value):\n        return value + 1\n    def outer(value):\n        return Local.inner(value)\n}\n",
+	} {
+		t.Run(label, func(t *testing.T) {
+			root := t.TempDir()
+			success(t, root, "init")
+			write(t, root, "local.star", source)
+			success(t, root, "register", "local.star")
+			// Refresh must not infer a dependency on the process itself.
+			success(t, root, "register", "local.star")
+			for _, fn := range []string{"inner", "outer"} {
+				for _, n := range []int{1, 2} {
+					success(t, root, "example", "add", "--input", fmt.Sprint(n), "--output", fmt.Sprint(n+1), "Local."+fn)
+				}
+			}
+			if out := success(t, root, "run", "--input", "3", "Local.outer"); out != "4\n" {
+				t.Fatal(out)
+			}
+			success(t, root, "example", "remove", "--input", "2", "Local.inner")
+			code, _, err := invoke(t, root, false, "", "run", "--input", "3", "Local.outer")
+			if code != 1 || !strings.Contains(err, "Local.inner needs examples") {
+				t.Fatalf("inner bypassed dispatch: %d %s", code, err)
+			}
+		})
 	}
 }
+
+func TestProcessDeclarationNamesAndPrivateHelpers(t *testing.T) {
+	root := t.TempDir()
+	success(t, root, "init")
+	write(t, root, "arithmetic.star", `Process Numbers {
+    """Functions on numbers, with no shared state."""
+    def _increment(value):
+        items = []
+        items.append(value)
+        return items[0] + len(items)
+    def next(value):
+        """Return the following number."""
+        return _increment(value)
+}
+`)
+	code, _, errout := invoke(t, root, false, "", "register", "--name", "Other", "arithmetic.star")
+	if code != 2 || !strings.Contains(errout, "does not match") {
+		t.Fatalf("accepted conflicting name: %d %s", code, errout)
+	}
+	success(t, root, "register", "arithmetic.star")
+	p, err := project.LoadWith(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proc := p.Processes["Numbers"]
+	if proc == nil || len(proc.Functions) != 1 || proc.Description != "Functions on numbers, with no shared state." || proc.Functions["next"].Description != "Return the following number." {
+		t.Fatalf("wrong registration: %+v", proc)
+	}
+	for _, n := range []int{1, 2} {
+		success(t, root, "example", "add", "--input", fmt.Sprint(n), "--output", fmt.Sprint(n+1), "Numbers.next")
+	}
+	for _, n := range []int{3, 4} {
+		if out := success(t, root, "run", "--input", fmt.Sprint(n), "Numbers.next"); out != fmt.Sprintln(n+1) {
+			t.Fatal(out)
+		}
+	}
+	success(t, root, "test")
+	before := read(t, root, "arithmetic.yaml")
+	write(t, root, "arithmetic.star", "Process Other {\n    def next(value):\n        return value + 1\n}\n")
+	for _, command := range []string{"build", "register"} {
+		args := []string{command}
+		if command == "register" {
+			args = append(args, "arithmetic.star")
+		}
+		code, _, errout := invoke(t, root, false, "", args...)
+		if code != 2 || !strings.Contains(errout, "does not match") || read(t, root, "arithmetic.yaml") != before {
+			t.Fatalf("%s accepted changed namespace or changed sidecar: %d %s", command, code, errout)
+		}
+	}
+}
+
 func TestSourceRestrictionsAndStepLimit(t *testing.T) {
 	for _, source := range []string{
 		"def f(a, b):\n    return a\n",
@@ -281,6 +374,8 @@ func TestSourceRestrictionsAndStepLimit(t *testing.T) {
 		"load(\"other.star\", \"f\")\n",
 		"print(\"initialization ran\")\ndef f(x):\n    return x\n",
 		"def _helper(x=print(\"initialization ran\")):\n    return x\ndef f(x):\n    return x\n",
+		"Process Bad {\n    state = []\n    def f(x):\n        return x\n}\n",
+		"Process Bad {\n    def _helper(x=print(\"initialization ran\")):\n        return x\n    def f(x):\n        return x\n}\n",
 	} {
 		t.Run(source, func(t *testing.T) {
 			root := t.TempDir()

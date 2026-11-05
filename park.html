@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Park catalog</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;max-width:960px;margin:40px auto;padding:0 24px;color:#25332c;background:#f7f8f4}a{color:#286444}code,pre{font:14px/1.5 ui-monospace,monospace}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf0e9;padding:12px;border-radius:6px}article{margin:24px 0;padding:16px 24px;background:white;border:1px solid #dce3d8;border-radius:10px}.meta{color:#596559}footer{margin:40px 0;font-size:12px;overflow-wrap:anywhere}h2{margin-top:40px}</style></head>
+<body><header><h1>Park</h1><p>Processes, functions, and authored input/output examples.</p></header>
+<nav aria-label="Processes"><ul><li><a href="#RomanAdd">RomanAdd</a><ul><li><a href="#RomanAdd.eval">eval(text) sum</a></li></ul></li><li><a href="#RomanParse">RomanParse</a><ul><li><a href="#RomanParse.parse">parse(in) out</a></li><li><a href="#RomanParse.tokenize">tokenize(tx) res</a></li></ul></li></ul></nav>
+<main><section id="RomanAdd"><h2>RomanAdd</h2><p>Add two lowercase Roman numerals.</p><p>Uses: <a href="#RomanParse">RomanParse</a> </p>
+<article id="RomanAdd.eval"><h3><code>eval(text) sum</code></h3><p>Add two numerals separated by &#39; &#43; &#39;.</p><p class="meta">implemented · 2 authored examples · <code>roman_add.star</code></p>
+<div><pre>text: &#34;ix &#43; vi&#34;
+sum: 15</pre></div><div><pre>text: &#34;vi &#43; ix&#34;
+sum: 15</pre></div>
+</article></section><section id="RomanParse"><h2>RomanParse</h2><p>Convert lowercase Roman numerals using i, v, and x.</p>
+<article id="RomanParse.parse"><h3><code>parse(in) out</code></h3><p>Parse a lowercase Roman numeral.</p><p class="meta">implemented · 2 authored examples · <code>roman_parse.star</code></p>
+<div><pre>in: &#34;ix&#34;
+out: 9</pre></div><div><pre>in: &#34;vi&#34;
+out: 6</pre></div>
+</article><article id="RomanParse.tokenize"><h3><code>tokenize(tx) res</code></h3><p>An example-only token vocabulary for teaching calls.</p><p class="meta">example-only · 2 authored examples</p>
+<div><pre>tx: &#34;ix &#43; vi&#34;
+res: [&#34;ix&#34;,&#34;&#43;&#34;,&#34;vi&#34;]</pre></div><div><pre>tx: &#34;vi &#43; ix&#34;
+res: [&#34;vi&#34;,&#34;&#43;&#34;,&#34;ix&#34;]</pre></div>
+</article></section></main>
+<footer>Project revision: <code>ec4a6c528f9bef4de5772ff667dd658ed44c1796cba947737e005222178a0878</code></footer></body></html>

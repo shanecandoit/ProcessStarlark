@@ -12,6 +12,7 @@ import (
 	"go.starlark.net/syntax"
 	"park/internal/project"
 	"park/internal/samples"
+	"park/internal/source"
 )
 
 const MaxSteps = 1_000_000
@@ -77,11 +78,14 @@ func (e *Engine) load(name string) error {
 		return nil
 	}
 	path := filepath.Clean(filepath.Join(filepath.Dir(proc.ManifestPath), proc.Module))
-	opts := &syntax.FileOptions{}
-	file, err := opts.Parse(path, e.Project.Files[path], 0)
+	parsed, err := source.Parse(path, e.Project.Files[path])
 	if err != nil {
 		return err
 	}
+	if parsed.Name != "" && parsed.Name != name {
+		return fmt.Errorf("%s: Process %s does not match registered name %s", path, parsed.Name, name)
+	}
+	file := parsed.File
 	pre := starlark.StringDict{}
 	disabled := func(_ *starlark.Thread, b *starlark.Builtin, _ starlark.Tuple, _ []starlark.Tuple) (starlark.Value, error) {
 		return nil, fmt.Errorf("%s is unavailable in Park", b.Name())
@@ -95,6 +99,16 @@ func (e *Engine) load(name string) error {
 			members[fn] = e.wrapper(dep + "." + fn)
 		}
 		pre[dep] = starlarkstruct.FromStringDict(starlark.String(dep), members)
+	}
+	if parsed.Name != "" {
+		if _, exists := pre[name]; exists {
+			return fmt.Errorf("%s: Process name %s collides with a dependency or reserved builtin", path, name)
+		}
+		members := starlark.StringDict{}
+		for _, fn := range project.Names(proc.Functions) {
+			members[fn] = e.wrapper(name + "." + fn)
+		}
+		pre[name] = starlarkstruct.FromStringDict(starlark.String(name), members)
 	}
 	aliases := map[string]string{}
 	for _, fn := range project.Names(proc.Functions) {

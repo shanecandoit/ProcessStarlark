@@ -17,7 +17,7 @@ import (
 const MaxFileBytes = 2 << 20
 const MaxProjectBytes = 32 << 20
 const MaxFiles = 2048
-const CodecVersion = "park-v1-codec-1-engine-1"
+const CodecVersion = "park-v1-codec-1-engine-2"
 
 var identifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 var signature = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\(([A-Za-z_][A-Za-z0-9_]*)\) ([A-Za-z_][A-Za-z0-9_]*)$`)
@@ -129,30 +129,26 @@ func Root(path string) (string, error) {
 	}
 	return filepath.EvalSymlinks(abs)
 }
+
+// Discover checks only start for a Park project; it never searches ancestors.
 func Discover(start string) (string, error) {
 	root, err := Root(start)
 	if err != nil {
 		return "", err
 	}
-	for {
-		entries, err := os.ReadDir(root)
-		if err != nil {
-			return "", err
-		}
-		for _, entry := range entries {
-			if entry.Name() == ".park" && entry.IsDir() {
-				return root, nil
-			}
-			if !entry.IsDir() && (strings.HasSuffix(entry.Name(), ".star") || strings.HasSuffix(entry.Name(), ".yaml")) {
-				return root, nil
-			}
-		}
-		parent := filepath.Dir(root)
-		if parent == root {
-			return "", fmt.Errorf("no Park project found; use park init or --root PATH")
-		}
-		root = parent
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return "", err
 	}
+	for _, entry := range entries {
+		if entry.Name() == ".park" && entry.IsDir() {
+			return root, nil
+		}
+		if !entry.IsDir() && (strings.HasSuffix(entry.Name(), ".star") || strings.HasSuffix(entry.Name(), ".yaml") || strings.HasSuffix(entry.Name(), ".yml")) {
+			return root, nil
+		}
+	}
+	return "", fmt.Errorf("no Park project found in current directory; use park init or --root PATH")
 }
 
 // LoadWith validates a proposed flat project snapshot; nil contents remove files.

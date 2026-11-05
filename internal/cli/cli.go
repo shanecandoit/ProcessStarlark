@@ -122,7 +122,7 @@ func value(fs *flag.FlagSet, name, raw string) (any, error) {
 }
 func (c *CLI) execute(ctx context.Context, args []string) error {
 	global := c.flags("park")
-	rootFlag := global.String("root", "", "Project root (otherwise search upward)")
+	rootFlag := global.String("root", "", "Project root (defaults to current directory)")
 	global.Usage = func() { fmt.Fprint(c.Err, usage); global.PrintDefaults() }
 	if err := parse(global, args); err != nil {
 		return err

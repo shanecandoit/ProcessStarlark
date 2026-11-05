@@ -9,10 +9,11 @@ import (
 	"go.starlark.net/syntax"
 	"go.yaml.in/yaml/v3"
 	"park/internal/samples"
+	"park/internal/source"
 )
 
 // Generate creates or refreshes a sidecar while retaining authored function data.
-// Public top-level definitions become exports; underscore-prefixed helpers stay private.
+// Public Process functions become exports; underscore-prefixed helpers stay private.
 func Generate(p *Project, module, name string, explicitUses []string) (string, []byte, error) {
 	module = filepath.Clean(module)
 	if filepath.Dir(module) != "." || filepath.Ext(module) != ".star" {
@@ -29,14 +30,15 @@ func Generate(p *Project, module, name string, explicitUses []string) (string, [
 	if !info.Mode().IsRegular() || info.Size() > MaxFileBytes {
 		return "", nil, fmt.Errorf("invalid module file %s", module)
 	}
-	source, err := os.ReadFile(path)
+	contents, err := os.ReadFile(path)
 	if err != nil {
 		return "", nil, err
 	}
-	file, err := (&syntax.FileOptions{}).Parse(module, source, 0)
+	parsed, err := source.Parse(module, contents)
 	if err != nil {
 		return "", nil, err
 	}
+	file := parsed.File
 	rel := strings.TrimSuffix(module, ".star") + ".yaml"
 	var old *Process
 	for _, proc := range p.Processes {
@@ -50,6 +52,12 @@ func Generate(p *Project, module, name string, explicitUses []string) (string, [
 			return "", nil, fmt.Errorf("cannot rename existing process %s during registration", old.Name)
 		}
 		name = old.Name
+	}
+	if parsed.Name != "" {
+		if name != "" && name != parsed.Name {
+			return "", nil, fmt.Errorf("%s: Process %s does not match registered/requested name %s", module, parsed.Name, name)
+		}
+		name = parsed.Name
 	}
 	if name == "" {
 		for _, part := range strings.Split(strings.TrimSuffix(module, ".star"), "_") {
@@ -131,7 +139,7 @@ func Generate(p *Project, module, name string, explicitUses []string) (string, [
 	}
 	syntax.Walk(file, func(n syntax.Node) bool {
 		if dot, ok := n.(*syntax.DotExpr); ok {
-			if id, ok := dot.X.(*syntax.Ident); ok && p.Processes[id.Name] != nil {
+			if id, ok := dot.X.(*syntax.Ident); ok && id.Name != name && p.Processes[id.Name] != nil {
 				uses[id.Name] = true
 			}
 		}

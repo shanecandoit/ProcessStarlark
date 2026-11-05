@@ -8,10 +8,11 @@ and maintains an offline `park.html` catalog. `docs/reference.md` documents the
 format for users; this document defines the implementation contract, with these
 v1 decisions:
 
-- Use `go.starlark.net` and ordinary `.star` files. Represent `Process`, `use`,
-  exports, and examples as data instead of implementing the original custom
-  `Process { ... }` or `example` syntax yet. Use a small declarative signature
-  in each sidecar function entry to name its input and output fields.
+- Use `go.starlark.net` for function bodies inside one stateless
+  `Process Name { ... }` namespace per `.star` file. A small source adapter
+  handles the optional namespace declaration; regular top-level Starlark remains
+  supported. Keep dependencies, exports, and examples in YAML, with a small
+  declarative signature naming each function's input and output fields.
 - Keep one YAML sidecar beside each `.star` module. It contains registration,
   descriptions, signatures, and authored examples. Store computed results in
   `.cache/` as disposable, revisioned canonical JSON records.
@@ -24,7 +25,9 @@ v1 decisions:
 - Support an interactive prompt for an unknown call to an example-only function.
   Entering an implementation means editing a `.star` file and rerunning; an
   inline code editor, synthesis, nested processes, remote services, and a full
-  custom language parser are outside v1.
+  custom language parser are outside v1. Processes are stateless namespaces
+  for organizing functions, like classes with just a name and functions,
+  without class features or shared state.
 
 An initial v1 CLI is implemented in `cmd/park`. Keep the README's status and
 quick start, and `docs/reference.md`'s usage details, current. The acceptance checks below describe the expected v1
@@ -101,8 +104,10 @@ handles only lowercase `i`, `v`, and `x` and does not validate Roman grammar.
 
 `park register FILE.star` generates or refreshes the matching sidecar:
 
-- Register public top-level definitions. Names beginning with `_` are private.
-- Default `roman_parse.star` to process name `RomanParse`; allow `--name`.
+- Register public functions in the Process block. Names beginning with `_` are
+  private.
+- Use the declared Process name, matching any existing registration or `--name`.
+  For regular modules, default `roman_parse.star` to `RomanParse`; allow `--name`.
 - Give new exports `name(in) out` signatures and empty example lists.
 - Read module and function docstrings as descriptions.
 - Detect references to already registered process namespaces. Register
@@ -118,9 +123,10 @@ Manually registered exports are also supported. Only registered functions are
 public. Calls between exports, including within one process, use dispatch
 wrappers; private helpers are ordinary Starlark functions.
 
-Use the current directory or walk upward to a directory with `.park/`, `.star`
-modules, or YAML sidecars. `--root PATH` explicitly selects the project root. An
-initial `register` can start in the current directory. `park init [DIR]` creates
+Use only the current directory, checking for `.park/`, `.star` modules, or YAML
+sidecars without searching parent directories. `--root PATH` explicitly selects
+the project root. An initial `register` can start in the current directory.
+`park init [DIR]` creates
 an empty catalog and internal project state without overwriting existing
 sidecars or generated project state. `park build` validates registered data and
 regenerates HTML; it never automatically re-registers removed exports.
