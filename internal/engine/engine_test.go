@@ -144,3 +144,30 @@ func TestExampleOnlyFunctionsDispatchToExamples(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestUnconfirmedCodeRunsAsProposals(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "m.star"), []byte("example: twice(1) == 2\n\ndef twice(n):\n    result = n * 2\n    return result\n"), 0644)
+	p, err := project.LoadWith(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := New(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := run(t, e, "M.twice", map[string]any{"n": int64(5)})
+	if err != nil || out != int64(10) {
+		t.Fatalf("got %v %v", out, err)
+	}
+	if got := e.Proposals(); len(got) != 1 || got[0].Function != "M.twice" || got[0].Output != int64(10) {
+		t.Fatalf("proposals: %+v", got)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(root, ".cache")); len(entries) != 0 {
+		t.Fatal("unconfirmed result was cached")
+	}
+	// The example still answers before the body, with no proposal.
+	if out, _ := run(t, e, "M.twice", map[string]any{"n": int64(1)}); out != int64(2) || len(e.Proposals()) != 0 {
+		t.Fatalf("example: %v %+v", out, e.Proposals())
+	}
+}

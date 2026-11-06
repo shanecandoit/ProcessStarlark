@@ -64,9 +64,11 @@ Now `xiv` gives `14`. Your examples are still in charge:
 - Examples can be written in any file and name any function. They all go into
   one project-wide set.
 - `park test` checks that the code gives the same answers as your examples.
-- Park won't run the code until you've given it at least two distinct examples.
-  This is an authoring requirement. Run `park test` to check whether the code
-  agrees with those answers; `park run` doesn't run the tests for you.
+- Until a function has at least two examples, its code still runs, but each
+  answer is *unconfirmed*: Park prints it, queues it in `questions.txt` as a
+  proposed example, and you confirm the ones that are right. Write code first
+  and the examples follow. `park run` doesn't run the tests for you; use
+  `park test`.
 
 ## Why use it?
 
@@ -104,8 +106,9 @@ before the command.
 - [Why Park?](docs/why-park.md): how Park compares with other languages.
 - [Reference](docs/reference.md): file formats, commands, and the exact rules.
 - [Design decisions](docs/design.md): what was decided and why.
-- [Sample project ideas](docs/ideas-sample-projs.md) and the
-  [implementation plan](plan.md).
+- [Sample projects](docs/ideas-sample-projs.md): a game, a business tool, and
+  geometry, each runnable from [`examples/`](examples).
+- [Implementation plan](plan.md): the full contract.
 
 **Status:** early. The command-line tool works end to end, and its details may
 still change.

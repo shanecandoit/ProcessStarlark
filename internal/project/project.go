@@ -65,7 +65,7 @@ type Function struct {
 	Signature, Output string
 	Inputs            []string // Named inputs, in parameter order.
 	Path              string   // Module that declares the function.
-	Line              int
+	Line, EndLine     int      // Lines of the def, 1-based and inclusive.
 	Examples          []Example
 	Index             map[string]any // Canonical input -> output.
 }
@@ -391,7 +391,8 @@ func parseFunction(path string, def *syntax.DefStmt) (*Function, error) {
 	if !ValidName(name) {
 		return nil, fmt.Errorf("%s: invalid function name %q", def.Def, name)
 	}
-	f := &Function{Name: name, Path: path, Line: int(def.Def.Line), Index: map[string]any{}}
+	_, end := def.Span()
+	f := &Function{Name: name, Path: path, Line: int(def.Def.Line), EndLine: int(end.Line), Index: map[string]any{}}
 	for _, param := range def.Params {
 		id, ok := param.(*syntax.Ident)
 		if !ok {
@@ -546,6 +547,19 @@ func docString(stmts []syntax.Stmt) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// Code returns a function's source as written, without the Process indentation.
+func (p *Project) Code(proc *Process, f *Function) string {
+	lines := strings.Split(string(p.Files[f.Path]), "\n")
+	if f.Line < 1 || f.EndLine > len(lines) || f.Line > f.EndLine {
+		return ""
+	}
+	code := lines[f.Line-1 : f.EndLine]
+	for i, line := range code {
+		code[i] = strings.TrimPrefix(line, proc.Indent)
+	}
+	return strings.Join(code, "\n")
 }
 
 func (p *Project) Function(qualified string) (*Process, *Function, error) {

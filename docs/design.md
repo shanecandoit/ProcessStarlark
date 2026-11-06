@@ -78,7 +78,7 @@ even when an implementation exists. `park test` checks implementations against
 every example.
 
 ### D7. Two distinct examples before a body runs
-**Implemented** · v1
+**Superseded** by [D18](#d18-code-without-two-examples-runs-unconfirmed) · v1
 
 An implementation runs only after its function has two or more distinct
 authored examples. This is an authoring requirement, not a proof of correctness
@@ -197,15 +197,13 @@ module is saved, only the catalog can be stale, and `park build` regenerates it.
 ### D16. Unanswered calls become queued questions
 **Implemented** · 2026-11-05, supersedes `park run --interactive`
 
-When a call has no matching example and no ready implementation, Park adds it to
+When a call has no matching example and no implementation, Park adds it to
 `questions.txt` and prints the `park example add` command that answers it. Open
 questions appear at the top of `park.html` and `park list`. A question is
-answered by an example for that call or by an implementation with at least two
-distinct examples, and is then removed automatically. A body with fewer examples
-leaves the question open, and calls blocked by that requirement are queued too.
-Removing a question because a body is ready does not execute or verify the body
-or its dependencies. `park test` queues dependency misses too. Errors from
-executing ready implementations remain evaluation errors, not questions.
+answered by an example for that call, or by its function becoming ready (two
+examples), and is then removed automatically. `park test` queues dependency
+misses too. Errors from running implementations remain evaluation errors, not
+questions. Unconfirmed answers share this queue as proposals; see D18.
 
 - Why: a queue is plain files, so it's simple to build and to test. Holding the
   terminal open to ask meant stdin handling, cancellation, and a reload-and-retry
@@ -230,12 +228,37 @@ the body disagrees; the disagreement fails the implementation check.
 - Cost: adding an intentional runtime override can make `park test` fail until
   the implementation is updated. Accepted for the current version.
 
+### D18. Code without two examples runs, unconfirmed
+**Implemented** · 2026-11-05, supersedes D7
+
+A function is *ready* once it has two distinct examples. Before that, its code
+still runs, but each answer is unconfirmed: `park run` prints it, notes that
+it's unconfirmed, and queues it in `questions.txt` as a proposal,
+`Words.shout("hi") == "HI!"`. Confirming one is `park example add` with that
+whole line. A newer answer for the same call replaces an older proposal.
+Unconfirmed results are never cached, and nor is any result in the same call
+that depended on one. Proposals are removed once confirmed or once the
+function is ready.
+
+- Why: people who write code first should end up with examples without
+  writing them by hand. Proposals give them examples to confirm rather than
+  invent.
+- Why not record outputs straight into examples: an example recorded from the
+  code checks nothing (it always passes `park test`), and because examples
+  outrank code, a recorded wrong answer would silently override a later fix. A
+  person confirming each answer is what turns it into a real example.
+- Two examples are still required: the rule now means "two answers a person
+  has checked" rather than "the code won't run".
+- Cost: an unready function's callers get unconfirmed answers. The CLI says so
+  on every such run.
+
 ## Resolved questions
 
 - **Deliberate exceptions — resolved by [D17](#d17-every-example-is-a-strict-implementation-check).**
   Keep strict checks; no exception annotation in the current version.
-- **Purpose of the two-example rule — clarified in [D7](#d7-two-distinct-examples-before-a-body-runs).**
-  Keep it as an authoring requirement; verification is a separate command.
+- **Purpose of the two-example rule — revised in [D18](#d18-code-without-two-examples-runs-unconfirmed).**
+  Keep requiring two examples; code runs before then, but its answers are
+  unconfirmed proposals until a person confirms them.
 
 ## Open questions
 

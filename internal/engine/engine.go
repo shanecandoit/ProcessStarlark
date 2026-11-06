@@ -18,18 +18,24 @@ import (
 const MaxSteps = 1_000_000
 const MaxCalls = 128
 
+// Unresolved is a call with no example and no implementation to answer it.
 type Unresolved struct {
-	Function      string
-	Inputs        []string       // Input names in signature order, for display.
-	Input         map[string]any // Named inputs.
-	NeedsExamples bool           // A body exists but is not ready to run.
+	Function string
+	Inputs   []string       // Input names in signature order, for display.
+	Input    map[string]any // Named inputs.
 }
 
 func (u *Unresolved) Error() string {
-	if u.NeedsExamples {
-		return u.Function + " needs examples: body requires two distinct authored inputs; unresolved call " + FormatCall(u.Function, u.Inputs, u.Input)
-	}
 	return "unresolved call " + FormatCall(u.Function, u.Inputs, u.Input)
+}
+
+// Proposal is an answer computed by an implementation that does not yet have
+// two examples. It is unconfirmed: shown to the user to confirm as an example,
+// never treated as one, and never cached.
+type Proposal struct {
+	Function string
+	Input    map[string]any
+	Output   any
 }
 
 // FormatCall renders a call as Process.fn(name=value, ...) in signature order.
@@ -42,6 +48,7 @@ type Engine struct {
 	bodies     map[string]*starlark.Function
 	loaded     map[string]bool
 	unresolved *Unresolved
+	proposals  []Proposal
 	active     map[string]bool
 	depth      int
 	Testing    bool
@@ -314,8 +321,13 @@ func literal(expr syntax.Expr) bool {
 	return false
 }
 
+// Proposals lists the unconfirmed answers computed during the last Run, in
+// call order. A result that depends on any of them is itself unconfirmed.
+func (e *Engine) Proposals() []Proposal { return e.proposals }
+
 func (e *Engine) Run(ctx context.Context, qualified string, input any) (any, error) {
 	e.unresolved = nil
+	e.proposals = nil
 	thread := &starlark.Thread{Name: qualified}
 	thread.SetMaxExecutionSteps(MaxSteps)
 	done := make(chan struct{})
@@ -368,11 +380,14 @@ func (e *Engine) dispatch(thread *starlark.Thread, qualified string, raw any) (a
 		}
 	}
 	body := e.bodies[qualified]
-	if body == nil || !f.Ready() {
-		u := &Unresolved{Function: qualified, Inputs: f.Inputs, Input: input, NeedsExamples: body != nil}
+	if body == nil {
+		u := &Unresolved{Function: qualified, Inputs: f.Inputs, Input: input}
 		e.unresolved = u
 		return nil, u
 	}
+	// Code without two examples still runs, but its answers are only proposals
+	// until a person confirms them as examples.
+	unconfirmed := !f.Ready()
 	callKey := qualified + "\x00" + key
 	if e.active[callKey] {
 		return nil, fmt.Errorf("recursive call repeats %s(%s)", qualified, key)
@@ -396,7 +411,11 @@ func (e *Engine) dispatch(thread *starlark.Thread, qualified string, raw any) (a
 	if err != nil {
 		return nil, fmt.Errorf("%s output: %w", qualified, err)
 	}
-	if !e.Testing {
+	if unconfirmed {
+		e.proposals = append(e.proposals, Proposal{Function: qualified, Input: input, Output: output})
+	}
+	// Cache only results that rest entirely on confirmed code.
+	if !e.Testing && len(e.proposals) == 0 {
 		if err := samples.WriteCache(cacheDir, qualified, e.Project.Revision, input, output); err != nil {
 			return nil, err
 		}

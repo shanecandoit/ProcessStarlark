@@ -165,6 +165,24 @@ func ParseValue(text string) (any, error) {
 	return Value(expr)
 }
 
+// ParseQuestion parses a queued question: a call, optionally followed by
+// `== value` when the code proposed an answer.
+func ParseQuestion(text string) (call *Call, proposed any, hasProposal bool, err error) {
+	expr, err := (&syntax.FileOptions{}).ParseExpr("question", text, 0)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if cmp, ok := expr.(*syntax.BinaryExpr); ok && cmp.Op == syntax.EQL {
+		if call, err = CallOf(cmp.X); err != nil {
+			return nil, nil, false, err
+		}
+		proposed, err = Value(cmp.Y)
+		return call, proposed, true, err
+	}
+	call, err = CallOf(expr)
+	return call, nil, false, err
+}
+
 // ParseExample parses `call == value`, the form used by `example:` lines.
 func ParseExample(text string) (*Call, any, error) {
 	expr, err := (&syntax.FileOptions{}).ParseExpr("example", text, 0)

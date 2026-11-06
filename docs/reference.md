@@ -14,10 +14,11 @@ in the [implementation plan](../plan.md).
 - **Example:** a call and its expected answer, such as
   `example: parse("ix") == 9`. Examples are authoritative. All examples in a
   project form one set, wherever they are written.
-- **Readiness:** an implemented function runs its body only after it has two or
-  more distinct examples. Until then, it shows as `needs examples`. This is an
-  authoring requirement, not a verification result. `park run` does not require
-  passing tests; use `park test` to check the implementation against examples.
+- **Readiness:** an implemented function is *ready* once it has two or more
+  distinct examples. Until then it shows as `needs examples`, and its code
+  still runs, but every answer it computes is *unconfirmed*: printed, proposed
+  as an example in the question queue, and never cached. Readiness is about
+  authoring, not verification; use `park test` to check code against examples.
 - **Cache:** computed results go in `.cache/`. It's disposable and is
   invalidated whenever any source file or the runtime changes.
 
@@ -27,13 +28,15 @@ For each call, the runtime:
 
 1. Returns the example's answer if the call matches an example.
 2. Otherwise checks `.cache/` for the current project revision.
-3. Otherwise executes the implementation, if it's present and ready, and caches
-   a successful output.
-4. Otherwise reports an unresolved call and adds it to the question queue
-   (see below). This includes a body blocked by the two-example requirement.
+3. Otherwise executes the implementation, if there is one. If the function is
+   ready, a successful output is cached. If not, the output is unconfirmed: it
+   is returned, proposed in the question queue, and not cached, and neither is
+   any result that used it.
+4. Otherwise (no example, no implementation) reports an unresolved call and
+   adds it to the question queue (see below).
 
-Errors from a ready implementation, such as invalid input, a failed operation,
-or an execution limit, remain evaluation errors; they are not queued questions.
+Errors from an implementation, such as invalid input, a failed operation, or an
+execution limit, remain evaluation errors; they are not queued questions.
 
 Computed results never count toward readiness. Execution has no filesystem,
 network, clock, environment, or randomness APIs.
@@ -211,8 +214,9 @@ build                             Validate and regenerate park.html
 
 ## Questions
 
-When a call has no matching example and either no implementation or an
-implementation with fewer than two distinct examples, Park queues a question:
+Park queues two kinds of question in `questions.txt`.
+
+**Unanswered calls.** No example matches and there's no code:
 
 ```text
 $ park run 'Shipping.quote("JP", 800)'
@@ -222,16 +226,30 @@ Answer it with an example:
 or implement Zones.zone with at least two distinct examples.
 ```
 
+**Proposed answers.** The code answered, but the function has fewer than two
+examples, so the answer is unconfirmed:
+
+```text
+$ park run 'Words.shout("hi")'
+"HI!"
+park: unconfirmed: this answer comes from code with fewer than two examples.
+Proposed in questions.txt; confirm each that is right:
+  park example add 'Words.shout("hi") == "HI!"'
+```
+
+A proposal is written as `call == value`, so confirming one is `park example
+add` with the whole line. If the answer is wrong, add the right example or fix
+the code; a newer answer for the same call replaces the older proposal. Write
+code first, run it, and confirm two answers, and the function is ready.
+
 - The question is about the call Park couldn't answer, which may be inside a
   dependency, as here. `park test` queues its misses too.
 - Open questions are listed in `questions.txt`, at the top of `park list`, and
   at the top of `park.html`.
-- Answer a question by adding an example for that call, or by implementing the
-  function with at least two distinct examples. Merely adding a body doesn't
-  clear the question. Questions are removed automatically once an exact example
-  exists or the body is ready, and the file is deleted when the queue is empty.
-  Removing a question because its body is ready does not execute or verify that
-  body; it may still fail or encounter a missing answer in a dependency.
+- A question is removed automatically once an exact example exists for its
+  call, or once its function is ready (two examples). The file is deleted when
+  the queue is empty. Removing a question because its function is ready does
+  not execute or verify the code; `park test` does that.
 - Park never reads from the terminal; answering is always a separate command
   or a source edit.
 

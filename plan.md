@@ -21,14 +21,15 @@ defines the implementation contract:
   module and name any declared function.
 - Store computed results in `.cache/` as disposable, revisioned canonical JSON
   records.
-- Require two distinct authored examples before executing an implementation
-  body. Examples count toward the function they name, wherever they are written.
+- A function with an implementation is ready once it has two distinct authored
+  examples. Before that its body still runs, but its answers are unconfirmed:
+  proposed in the question queue for the user to confirm, and never cached.
+  Examples count toward the function they name, wherever they are written.
 - Regenerate `park.html` after CLI changes to examples, and on `park build`.
   Include the first two and last two examples for each function, without
   duplicates.
-- Queue each unresolved call in `questions.txt` as a question for the user,
-  answered by an exact example or an implementation with at least two distinct
-  examples. Show open
+- Queue each unresolved call, and each unconfirmed answer as a proposal, in
+  `questions.txt` for the user. Show open
   questions at the top of `park.html` and in `park list`. Questions are local
   files for now; a later version moves them, with examples, to a database
   behind a REST API. Synthesis, nested processes, and remote services are
@@ -159,9 +160,11 @@ reads stdin. Errors go to stderr; a successful run prints one output as a Starla
 - `park build`: validate the project and regenerate `park.html`.
 
 Show an implemented function with fewer than two distinct examples as
-`needs examples`; prohibit body execution until ready. Known example inputs
-still return their outputs. Removing an example can return a body to that
-state. `park test` fails for unready implementations.
+`needs examples`. Its body still runs, but each answer is unconfirmed: `park
+run` prints it, queues it as a proposal (`call == value`), notes it on stderr,
+and exits 0. Known example inputs still return their outputs. Removing an
+example can return a function to that state. `park test` fails for unready
+implementations.
 Readiness is an authoring requirement, not a verification result: `park run`
 does not run the tests or require them to have passed. Implementation checks
 remain strict for every example, including deliberate exceptions to a rule;
@@ -179,12 +182,15 @@ question is about that innermost call.
 
 ### Question queue
 
-- `questions.txt` lists one call per line in call syntax, in arrival order,
-  after a fixed comment header. Duplicates are queued once.
+- `questions.txt` lists one question per line, in arrival order, after a fixed
+  comment header: a call (`Zones.zone("JP")`) when nothing answered it, or a
+  proposal (`Words.shout("hi") == "HI!"`) when unconfirmed code did. Each call
+  appears once, at its first position; a newer entry for the same call
+  replaces the older one.
 - Every publish (`build`, `example add/remove`, and runs or tests that queue
   questions) reloads the queue against the proposed project, drops questions
-  that now have an exact example or whose implementation is ready to run, and
-  rewrites the file. An empty queue removes the file.
+  that now have an exact example or whose function is ready, and rewrites the
+  file. An empty queue removes the file.
 - Lines that no longer parse or bind to a function (after a rename, say) are
   dropped with a notice on stderr.
 - The queue is not part of the project revision, so it never invalidates the
@@ -227,13 +233,14 @@ For each dispatched call:
 1. Bind positional and keyword arguments to the named inputs and validate
    them, then check authored examples.
 2. Check the computed cache for the current execution revision.
-3. If a body exists and has two distinct authored examples, execute with a step
-   limit and cancellation support, validate the result, and cache success.
+3. If a body exists, execute it with a step limit and cancellation support and
+   validate the result. If the function has two distinct authored examples,
+   cache success. Otherwise record the result as a proposal and cache nothing
+   else for the rest of that top-level call, since later results depend on it.
 4. Otherwise return an unresolved-call error, which the CLI turns into a
-   queued question. This includes bodies blocked by the two-example requirement.
-   Retain the question until an exact example exists or the body is ready.
-   Pruning questions does not execute bodies or verify their dependencies.
-   Errors while executing ready bodies remain evaluation errors and aren't queued.
+   queued question. Pruning questions does not execute bodies or verify their
+   dependencies. Errors while executing bodies remain evaluation errors and
+   aren't queued.
 
 Keep a deterministic environment: expose only approved builtins and project
 process namespaces, freeze module globals, and expose no filesystem, network,

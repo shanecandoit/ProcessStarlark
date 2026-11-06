@@ -268,9 +268,9 @@ func (c *CLI) list(p *project.Project, args []string) error {
 		return err
 	}
 	if open := project.OpenQuestions(p, queued, nil); len(open) > 0 {
-		fmt.Fprintf(c.Out, "Questions (%d): answer each with an example or an implementation\n", len(open))
+		fmt.Fprintf(c.Out, "Questions (%d): confirm proposed answers (== value) or answer with an example or code\n", len(open))
 		for _, q := range open {
-			fmt.Fprintf(c.Out, "  %s\n", q.Call)
+			fmt.Fprintf(c.Out, "  %s\n", q.Line())
 		}
 	}
 	for _, name := range project.Names(p.Processes) {
@@ -383,6 +383,30 @@ func (c *CLI) run(ctx context.Context, p *project.Project, args []string) error 
 		return fail(1, "%v", err)
 	}
 	fmt.Fprintln(c.Out, samples.Literal(output))
+	return c.propose(p, e.Proposals())
+}
+
+// propose queues answers computed by code without two examples, so a person
+// can confirm them as examples.
+func (c *CLI) propose(p *project.Project, proposals []engine.Proposal) error {
+	if len(proposals) == 0 {
+		return nil
+	}
+	var questions []project.Question
+	for _, pr := range proposals {
+		q, err := project.NewProposal(p, pr.Function, pr.Input, pr.Output)
+		if err != nil {
+			return err
+		}
+		questions = append(questions, q)
+	}
+	if err := c.publish(p, nil, questions...); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.Err, "park: unconfirmed: this answer comes from code with fewer than two examples.\nProposed in %s; confirm each that is right:\n", project.QuestionsFile)
+	for _, q := range questions {
+		fmt.Fprintf(c.Err, "  park example add '%s'\n", q.Line())
+	}
 	return nil
 }
 
@@ -394,9 +418,6 @@ func (c *CLI) ask(p *project.Project, unresolved *engine.Unresolved) error {
 	}
 	if err := c.publish(p, nil, q); err != nil {
 		return err
-	}
-	if unresolved.NeedsExamples {
-		return fail(3, "no answer for %s; added to %s\n%s needs examples: body requires two distinct authored inputs.\nAnswer this call with an example:\n  park example add '%s == ...'\nor add enough examples to enable %s's implementation.", engine.FormatCall(unresolved.Function, unresolved.Inputs, unresolved.Input), project.QuestionsFile, q.Function, q.Call, q.Function)
 	}
 	return fail(3, "no answer for %s; added to %s\nAnswer it with an example:\n  park example add '%s == ...'\nor implement %s with at least two distinct examples.", engine.FormatCall(unresolved.Function, unresolved.Inputs, unresolved.Input), project.QuestionsFile, q.Call, q.Function)
 }
@@ -451,6 +472,11 @@ func (c *CLI) test(ctx context.Context, p *project.Project, args []string) error
 						questions = append(questions, q)
 					}
 				}
+				for _, pr := range e.Proposals() {
+					if q, qerr := project.NewProposal(p, pr.Function, pr.Input, pr.Output); qerr == nil {
+						questions = append(questions, q)
+					}
+				}
 				if err != nil {
 					failures++
 					fmt.Fprintf(c.Err, "FAIL %s (%s:%d): %v\n", engine.FormatCall(qualified, f.Inputs, pair.Input), pair.Path, pair.Line, err)
@@ -466,7 +492,7 @@ func (c *CLI) test(ctx context.Context, p *project.Project, args []string) error
 		if err := c.publish(p, nil, questions...); err != nil {
 			return err
 		}
-		fmt.Fprintf(c.Err, "Added %d unanswered calls to %s; see park list.\n", len(questions), project.QuestionsFile)
+		fmt.Fprintf(c.Err, "Queued %d questions in %s; see park list.\n", len(questions), project.QuestionsFile)
 	}
 	if failures > 0 {
 		return fail(1, "tests failed")

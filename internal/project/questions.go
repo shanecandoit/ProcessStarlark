@@ -14,19 +14,38 @@ import (
 // function. It is local state for now; a later version moves it to a database.
 const QuestionsFile = "questions.txt"
 
-const questionsHeader = `# Questions: calls Park could not answer.
-# Answer each one with an example, e.g.
+const questionsHeader = `# Questions: calls Park could not answer on its own.
+#
+# A line ending in "== value" is an answer proposed by code that doesn't have two
+# examples yet. If it's right, confirm it as an example:
+#   park example add '<the whole line>'
+# If it's wrong, add the correct example or fix the code.
+#
+# A line without "== value" has no answer at all. Answer it with an example,
 #   park example add 'Process.function(...) == answer'
-# or by implementing the function with at least two distinct examples.
+# or by implementing the function.
+#
 # Answered questions are removed automatically.
 `
 
-// Question is one unanswered call.
+// Question is one call waiting for the user: either unanswered, or answered
+// only by unconfirmed code (a proposal).
 type Question struct {
-	Function string         // Qualified, e.g. Zones.zone.
-	Inputs   []string       // Input names, for display.
-	Input    map[string]any // Named inputs.
-	Call     string         // As written, e.g. Zones.zone("DE").
+	Function    string         // Qualified, e.g. Zones.zone.
+	Inputs      []string       // Input names, for display.
+	Input       map[string]any // Named inputs.
+	Call        string         // As written, e.g. Zones.zone("DE").
+	Proposed    any            // The code's answer, when HasProposal.
+	HasProposal bool
+}
+
+// Line is the question as written in the queue: the call, plus "== value" for
+// a proposal, so the whole line can be confirmed with park example add.
+func (q Question) Line() string {
+	if q.HasProposal {
+		return q.Call + " == " + samples.Literal(q.Proposed)
+	}
+	return q.Call
 }
 
 func (q Question) key() string { return q.Function + "\x00" + samples.Key(q.Input) }
@@ -38,6 +57,13 @@ func NewQuestion(p *Project, qualified string, input map[string]any) (Question, 
 		return Question{}, err
 	}
 	return Question{Function: qualified, Inputs: f.Inputs, Input: input, Call: CallText(qualified, f, input)}, nil
+}
+
+// NewProposal records an answer computed by code that is not yet confirmed.
+func NewProposal(p *Project, qualified string, input map[string]any, output any) (Question, error) {
+	q, err := NewQuestion(p, qualified, input)
+	q.Proposed, q.HasProposal = output, err == nil
+	return q, err
 }
 
 // CallText writes a call with positional literals in signature order.
@@ -82,7 +108,7 @@ func LoadQuestions(p *Project) (questions []Question, stale []string, err error)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		call, err := source.ParseCall(line)
+		call, proposed, hasProposal, err := source.ParseQuestion(line)
 		if err != nil || call.Process == "" {
 			stale = append(stale, line)
 			continue
@@ -98,21 +124,27 @@ func LoadQuestions(p *Project) (questions []Question, stale []string, err error)
 			stale = append(stale, line)
 			continue
 		}
-		questions = append(questions, Question{Function: qualified, Inputs: f.Inputs, Input: input, Call: CallText(qualified, f, input)})
+		questions = append(questions, Question{Function: qualified, Inputs: f.Inputs, Input: input, Call: CallText(qualified, f, input), Proposed: proposed, HasProposal: hasProposal})
 	}
 	return questions, stale, nil
 }
 
-// OpenQuestions merges new questions into the queue, in arrival order without
-// duplicates, and drops questions the project can now answer.
+// OpenQuestions merges new questions into the queue and drops questions the
+// project can now answer. Each call appears once, at its first position; a
+// newer entry for the same call replaces the older one, so a proposal reflects
+// the latest code.
 func OpenQuestions(p *Project, queued, added []Question) []Question {
-	seen := map[string]bool{}
+	position := map[string]int{}
 	var open []Question
 	for _, q := range append(append([]Question{}, queued...), added...) {
-		if seen[q.key()] || p.Answered(q) {
+		if p.Answered(q) {
 			continue
 		}
-		seen[q.key()] = true
+		if i, ok := position[q.key()]; ok {
+			open[i] = q
+			continue
+		}
+		position[q.key()] = len(open)
 		open = append(open, q)
 	}
 	return open
@@ -127,7 +159,7 @@ func FormatQuestions(questions []Question) []byte {
 	var b strings.Builder
 	b.WriteString(questionsHeader)
 	for _, q := range questions {
-		b.WriteString(q.Call + "\n")
+		b.WriteString(q.Line() + "\n")
 	}
 	return []byte(b.String())
 }

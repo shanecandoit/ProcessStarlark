@@ -19,4 +19,19 @@ Process RomanParse:
 
     def tokenize(text):
         """An example-only token vocabulary for teaching calls."""
-        pass
+        result = []
+        tok = ""
+        for ch in text.strip():
+            if ch in " \t\r\n":
+                if len(tok):
+                    result.append(tok)
+                    tok=""
+                elif ch in "ivxcml":
+                    tok = tok + ch
+            else:
+                if len(tok):
+                    result.append(tok)
+                    tok=""
+        if len(tok):
+            result.append(tok)
+        return result

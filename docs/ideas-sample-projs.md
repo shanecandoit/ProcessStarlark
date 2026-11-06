@@ -1,17 +1,20 @@
 # Sample projects
 
-Three small Park projects for three kinds of users. Each one is a folder of
-`.star` files that passes `park test` as written. Each also has a place where
+Three small Park projects for three kinds of users. Each one is a folder in
+[`examples/`](../examples) that passes `park test`; a test keeps the code on
+this page identical to those files. Each also has a place where
 an unknown input stops Park, and someone answers it once to teach it.
 
 | Project | For | Shows |
 |---|---|---|
-| [Robot on a grid](#game-robot-on-a-grid) | people learning to code | state in, state out; a vocabulary that grows |
-| [Shipping quotes](#business-shipping-quotes) | operations and the developers they work with | a rule table owned by non-programmers, code owned by developers |
-| [Shapes on a grid](#geometry-shapes-on-a-grid) | teachers and students | examples as worked answers, checked against code |
+| [Robot on a grid](#game-robot-on-a-grid) (`examples/robot`) | people learning to code | state in, state out; a vocabulary that grows |
+| [Shipping quotes](#business-shipping-quotes) (`examples/shipping`) | operations and the developers they work with | a rule table owned by non-programmers, code owned by developers |
+| [Shapes on a grid](#geometry-shapes-on-a-grid) (`examples/shapes`) | teachers and students | examples as worked answers, checked against code |
 
-To try one, put its files in an empty folder and run `park init`, then the
-commands shown. See the [reference](reference.md) for the format.
+To try one, `cd` into its folder, run `park build` to generate `park.html`,
+then try the commands shown. Answering questions edits the example's files;
+`git checkout examples` resets them. See the [reference](reference.md) for the
+format.
 
 ## Game: robot on a grid
 

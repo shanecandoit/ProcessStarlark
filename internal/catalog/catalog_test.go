@@ -1,6 +1,8 @@
 package catalog
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -26,5 +28,28 @@ func TestSelectionAndEscaping(t *testing.T) {
 	}
 	if !strings.Contains(string(html), "tag: &#34;&lt;b&gt;&#34;\nattribute: &#34;x&#34;\nmarkup:") {
 		t.Fatal("example inputs missing or not in signature order:\n" + string(html))
+	}
+	if strings.Contains(string(html), "Show code") {
+		t.Fatal("example-only function shows a code section")
+	}
+}
+
+func TestCodeIsShownCollapsedAndEscaped(t *testing.T) {
+	root := t.TempDir()
+	src := "Process P:\n    def f(x):\n        \"\"\"Doc.\"\"\"\n        y = \"<b>\" + x\n        return y\n\n    example: f(\"a\") == \"<b>a\"\n"
+	if err := os.WriteFile(filepath.Join(root, "p.star"), []byte(src), 0644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := project.LoadWith(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	html, err := Render(p, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "<details><summary>Show code</summary><pre>def f(x):\n    &#34;&#34;&#34;Doc.&#34;&#34;&#34;\n    y = &#34;&lt;b&gt;&#34; &#43; x\n    return y</pre></details>"
+	if !strings.Contains(string(html), want) {
+		t.Fatal("code section missing, indented, or unescaped:\n" + string(html))
 	}
 }

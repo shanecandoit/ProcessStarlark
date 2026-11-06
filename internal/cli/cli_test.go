@@ -184,11 +184,12 @@ func TestUnansweredCallsBecomeQuestions(t *testing.T) {
 	if !strings.Contains(read(t, root, "park.html"), "needs examples") {
 		t.Fatal("catalog did not reflect readiness")
 	}
-	if code, _, _ := invoke(t, root, "run", `RomanParse.parse("iv")`); code != 3 {
-		t.Fatal("unready body executed", code)
+	// Code with fewer than two examples runs, and its answer is proposed.
+	if code, out, err := invoke(t, root, "run", `RomanParse.parse("iv")`); code != 0 || out != "4\n" || !strings.Contains(err, "unconfirmed") {
+		t.Fatalf("unready body should run unconfirmed: %d %q %s", code, out, err)
 	}
-	if !strings.Contains(read(t, root, "questions.txt"), `RomanParse.parse("iv")`) {
-		t.Fatal("unready call was not queued")
+	if !strings.Contains(read(t, root, "questions.txt"), `RomanParse.parse("iv") == 4`) {
+		t.Fatal("unconfirmed answer was not proposed")
 	}
 	if success(t, root, "run", `RomanParse.parse("ix")`) != "9\n" {
 		t.Fatal("known example was gated")
@@ -242,49 +243,58 @@ func TestExampleEditsPreserveSource(t *testing.T) {
 	}
 }
 
-func TestQuestionsRemainUntilImplementationIsReady(t *testing.T) {
+func TestUnconfirmedCodeProposesAnswers(t *testing.T) {
 	root := t.TempDir()
 	success(t, root, "init")
 	write(t, root, "double.star", "def double(value):\n    pass\n")
 	if code, _, _ := invoke(t, root, "run", "Double.double(3)"); code != 3 {
 		t.Fatal("expected unanswered call", code)
 	}
+	// Code without examples runs; its answer replaces the open question as a proposal.
 	write(t, root, "double.star", "def double(value):\n    result = value * 2\n    return result\n")
-	for count := range 2 { // Neither zero nor one example may clear the question.
-		if count == 1 {
-			success(t, root, "example", "add", "Double.double(1) == 2")
-		}
-		success(t, root, "build")
-		if !strings.Contains(read(t, root, "questions.txt"), "Double.double(3)") || !strings.Contains(success(t, root, "list"), "Questions (1)") || !strings.Contains(read(t, root, "park.html"), "Questions for you") {
-			t.Fatal("unready implementation cleared its question")
-		}
-		code, _, errout := invoke(t, root, "run", "Double.double(3)")
-		if code != 3 || !strings.Contains(errout, "Double.double needs examples") || !strings.Contains(errout, "park example add 'Double.double(3) == ...'") {
-			t.Fatalf("unready call should queue an actionable question: %d %s", code, errout)
-		}
-		if strings.Count(read(t, root, "questions.txt"), "Double.double(3)") != 1 || len(files(t, root, ".cache")) != 0 {
-			t.Fatal("unready call duplicated its question or wrote cache")
+	for range 2 {
+		code, out, errout := invoke(t, root, "run", "Double.double(3)")
+		if code != 0 || out != "6\n" || !strings.Contains(errout, "park example add 'Double.double(3) == 6'") {
+			t.Fatalf("unconfirmed run: %d %q %s", code, out, errout)
 		}
 	}
-	if success(t, root, "run", "Double.double(1)") != "2\n" {
-		t.Fatal("known example should still answer")
+	q := read(t, root, "questions.txt")
+	if strings.Count(q, "Double.double(3)") != 1 || !strings.Contains(q, "Double.double(3) == 6") {
+		t.Fatal("proposal not queued exactly once:\n" + q)
 	}
-	success(t, root, "example", "add", "Double.double(2) == 4")
+	if !strings.Contains(success(t, root, "list"), "Double.double(3) == 6") || !strings.Contains(read(t, root, "park.html"), "code proposes") {
+		t.Fatal("proposal not shown in list and catalog")
+	}
+	if len(files(t, root, ".cache")) != 0 {
+		t.Fatal("unconfirmed result was cached")
+	}
+	// A newer answer replaces an older proposal for the same call.
+	write(t, root, "double.star", "def double(value):\n    result = value * 3\n    return result\n")
+	success(t, root, "run", "Double.double(3)")
+	if q := read(t, root, "questions.txt"); strings.Contains(q, "== 6") || !strings.Contains(q, "Double.double(3) == 9") {
+		t.Fatal("proposal did not follow the code:\n" + q)
+	}
+	write(t, root, "double.star", "def double(value):\n    result = value * 2\n    return result\n")
+	success(t, root, "run", "Double.double(3)")
+	// Confirming the whole line turns the proposal into an example.
+	success(t, root, "example", "add", "Double.double(3) == 6")
 	if _, err := os.Stat(filepath.Join(root, "questions.txt")); !os.IsNotExist(err) {
-		t.Fatal("ready implementation should clear its question", err)
+		t.Fatal("confirmed proposal remains", err)
 	}
-	if success(t, root, "run", "Double.double(3)") != "6\n" {
-		t.Fatal("ready body did not execute")
+	if !strings.Contains(read(t, root, "double.star"), "example: double(3) == 6") {
+		t.Fatal("confirmation did not write an example")
 	}
-	// An exact example also answers a question without enabling the body.
-	success(t, root, "example", "remove", "Double.double(2)")
-	if code, _, _ := invoke(t, root, "run", "Double.double(4)"); code != 3 {
-		t.Fatal("expected new unready question", code)
-	}
-	success(t, root, "example", "remove", "Double.double(1)")
-	success(t, root, "example", "add", "Double.double(4) == 8")
+	// With two examples the code is confirmed: no proposals, and results are cached.
+	success(t, root, "run", "Double.double(7)")
+	success(t, root, "example", "add", "Double.double(1) == 2")
 	if _, err := os.Stat(filepath.Join(root, "questions.txt")); !os.IsNotExist(err) {
-		t.Fatal("exact example should clear its question", err)
+		t.Fatal("ready function should clear its proposals", err)
+	}
+	if code, out, errout := invoke(t, root, "run", "Double.double(5)"); code != 0 || out != "10\n" || strings.Contains(errout, "unconfirmed") {
+		t.Fatalf("ready run: %d %q %s", code, out, errout)
+	}
+	if len(files(t, root, ".cache")) == 0 {
+		t.Fatal("confirmed result was not cached")
 	}
 }
 
@@ -432,16 +442,20 @@ func TestSameProcessDispatchCannotBypassReadiness(t *testing.T) {
 				t.Fatal(out)
 			}
 			success(t, root, "example", "remove", "Local.inner(2)")
-			code, _, err := invoke(t, root, "run", "Local.outer(3)")
-			if code != 3 || !strings.Contains(err, "Local.inner needs examples") {
+			cached := len(files(t, root, ".cache"))
+			code, out, err := invoke(t, root, "run", "Local.outer(3)")
+			if code != 0 || out != "4\n" || !strings.Contains(err, "unconfirmed") {
 				t.Fatalf("inner bypassed dispatch: %d %s", code, err)
 			}
-			if q := read(t, root, "questions.txt"); !strings.Contains(q, "Local.inner(3)") || strings.Contains(q, "Local.outer(3)") {
-				t.Fatal("question must identify the blocked dependency:\n" + q)
+			if q := read(t, root, "questions.txt"); !strings.Contains(q, "Local.inner(3) == 4") || strings.Contains(q, "Local.outer(3)") {
+				t.Fatal("proposal must name the unconfirmed dependency:\n" + q)
+			}
+			if len(files(t, root, ".cache")) != cached {
+				t.Fatal("a result resting on unconfirmed code was cached")
 			}
 			code, _, err = invoke(t, root, "test", "Local.outer")
-			if code != 1 || !strings.Contains(err, "Local.inner needs examples") || !strings.Contains(read(t, root, "questions.txt"), "Local.inner(2)") {
-				t.Fatalf("test did not queue its unready dependency: %d %s", code, err)
+			if code != 0 || !strings.Contains(read(t, root, "questions.txt"), "Local.inner(2) == 3") {
+				t.Fatalf("test did not propose its unconfirmed dependency: %d %s", code, err)
 			}
 		})
 	}
@@ -601,5 +615,51 @@ func TestHelpWithoutProject(t *testing.T) {
 		if code != 0 || !strings.Contains(err, "Usage of") {
 			t.Fatalf("help failed %v: %d %s", args, code, err)
 		}
+	}
+}
+
+// TestExampleProjects runs park test on every project in examples/ and checks
+// that the code shown in docs/ideas-sample-projs.md is exactly those files.
+func TestExampleProjects(t *testing.T) {
+	dirs, err := filepath.Glob("../../examples/*")
+	if err != nil || len(dirs) == 0 {
+		t.Fatalf("no example projects: %v", err)
+	}
+	files := map[string]string{}
+	for _, dir := range dirs {
+		t.Run(filepath.Base(dir), func(t *testing.T) {
+			root := t.TempDir()
+			modules, _ := filepath.Glob(filepath.Join(dir, "*.star"))
+			for _, module := range modules {
+				b, err := os.ReadFile(module)
+				if err != nil {
+					t.Fatal(err)
+				}
+				files[module] = string(b)
+				write(t, root, filepath.Base(module), string(b))
+			}
+			if out := success(t, root, "test"); !strings.Contains(out, " 0 failures") {
+				t.Fatal(out)
+			}
+		})
+	}
+	doc := read(t, "../../docs", "ideas-sample-projs.md")
+	shown := 0
+	for _, block := range strings.Split(doc, "```python\n")[1:] {
+		code := block[:strings.Index(block, "```")]
+		if !strings.HasPrefix(code, "Process ") {
+			continue
+		}
+		shown++
+		found := false
+		for _, contents := range files {
+			found = found || contents == code
+		}
+		if !found {
+			t.Errorf("docs/ideas-sample-projs.md shows code that matches no file in examples/:\n%s", code)
+		}
+	}
+	if shown != len(files) {
+		t.Errorf("the doc shows %d modules but examples/ has %d", shown, len(files))
 	}
 }
