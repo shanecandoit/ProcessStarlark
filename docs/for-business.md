@@ -35,7 +35,8 @@ answer becomes a new example.
 
 ## A walkthrough: shipping quotes
 
-This is the *Shipping quotes* sample in the browser playground.
+This is the *Shipping quotes* sample in the
+[browser playground](https://shanecandoit.github.io/ProcessStarlark/). Press **Run** to follow along.
 
 1. **Operations keeps the zone table.** They list which zone each country is
    in: the US is domestic, Canada and Mexico are North America, France is

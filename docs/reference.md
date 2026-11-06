@@ -274,7 +274,8 @@ validation error, `3` unresolved call.
 
 ## Browser playground
 
-The playground (`sh serve.sh`, then <http://localhost:8000>) runs the same
+The playground (<https://shanecandoit.github.io/ProcessStarlark/>, or locally `sh serve.sh`, then
+<http://localhost:8000>) runs the same
 engine compiled to WebAssembly, so calls, examples, questions, `park test`,
 and the catalog follow the rules on this page. The differences:
 

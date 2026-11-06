@@ -15,6 +15,9 @@ never overrides an example, and Park checks that the two agree. When a case
 comes up that neither covers, Park doesn't guess: it asks the people who own
 the rule, and their answer becomes a new example.
 
+**Try it in your browser: <https://shanecandoit.github.io/ProcessStarlark/>**, with nothing to install. The shipping
+sample walks through a question and its answer.
+
 - **For business teams and buyers:** [Park for business teams](docs/for-business.md)
   walks through a shipping-quote example and compares Park with specs,
   spreadsheets, rules engines, and low-code tools.
@@ -117,8 +120,8 @@ go build -o park ./cmd/park
 Then open `park.html` in this folder to see every function and its examples.
 
 To try Park in a browser instead, run `sh serve.sh` and open
-<http://localhost:8000>. Pushes to `main` also publish the playground to
-GitHub Pages (see [.github/workflows/pages.yml](.github/workflows/pages.yml)). The playground runs the same engine, compiled to
+<http://localhost:8000>. The hosted copy at <https://shanecandoit.github.io/ProcessStarlark/> is rebuilt on
+every push to `main` by [.github/workflows/pages.yml](.github/workflows/pages.yml). The playground runs the same engine, compiled to
 WebAssembly: edit the samples, run calls, and answer Park's questions inline.
 The root Roman demo is two files, `roman_parse.star` and `roman_add.star`, each
 holding its code and examples. A separate copy in `fixtures/roman/` is

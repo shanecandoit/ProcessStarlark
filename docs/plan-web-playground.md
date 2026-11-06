@@ -136,7 +136,7 @@ tests. `cmd/park-wasm` is a thin `syscall/js` bridge over it.
   `web/dist`, and deploys it to GitHub Pages on every push to `main`
   (`web/dist` stays out of git). It needs Pages' source set to "GitHub
   Actions" once. The shipping sample now comes first, for business visitors.
-  Next: link the live URL from the README.
+  Live at <https://shanecandoit.github.io/ProcessStarlark/>, linked from the README.
 
 ## Non-goals
 
