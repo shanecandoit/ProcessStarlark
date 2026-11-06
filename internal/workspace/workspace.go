@@ -42,6 +42,29 @@ type Result struct {
 	Files    Files    `json:"files"`
 	Snapshot Snapshot `json:"snapshot"`
 	Archive  []byte   `json:"archive,omitempty"` // Zip bytes, from Archive (base64 in JSON).
+	Why      *Step    `json:"why,omitempty"`     // Provenance of a run's answer, like park run --why.
+}
+
+// Step is one call in a run's provenance tree, rendered for display.
+type Step struct {
+	Call   string  `json:"call"`
+	Output string  `json:"output"` // Starlark literal, or "?" if the call did not return.
+	Source string  `json:"source"` // example, code, unconfirmed code, unknown, or "" if the call never bound.
+	Path   string  `json:"path,omitempty"`
+	Line   int     `json:"line,omitempty"`
+	Error  string  `json:"error,omitempty"` // On the innermost failure only.
+	Steps  []*Step `json:"steps,omitempty"`
+}
+
+func why(s *engine.Step) *Step {
+	if s == nil {
+		return nil
+	}
+	out := &Step{Call: s.Call(), Output: s.Answer(), Source: s.Source, Path: s.Path, Line: s.Line, Error: s.Error}
+	for _, child := range s.Steps {
+		out.Steps = append(out.Steps, why(child))
+	}
+	return out
 }
 
 type Line struct {
@@ -244,9 +267,11 @@ func Run(ctx context.Context, files Files, call string) Result {
 	if err != nil {
 		return failure(files, err)
 	}
+	e.Why = true
 	callCtx, cancel := context.WithTimeout(ctx, engine.Timeout)
 	output, err := e.Run(callCtx, qualified, input)
 	cancel()
+	trace := why(e.Trace())
 	var unresolved *engine.Unresolved
 	if errors.As(err, &unresolved) {
 		q, qerr := project.NewQuestion(p, unresolved.Function, unresolved.Input)
@@ -257,10 +282,12 @@ func Run(ctx context.Context, files Files, call string) Result {
 		if perr != nil {
 			return failure(files, perr)
 		}
-		return Result{Status: Unresolved, Message: "no answer for " + q.Call, Files: next, Snapshot: snap}
+		return Result{Status: Unresolved, Message: "no answer for " + q.Call, Files: next, Snapshot: snap, Why: trace}
 	}
 	if err != nil {
-		return failure(files, err)
+		r := failure(files, err)
+		r.Why = trace
+		return r
 	}
 	if _, err := samples.Canonical(output); err != nil {
 		return failure(files, err)
@@ -277,7 +304,7 @@ func Run(ctx context.Context, files Files, call string) Result {
 	if err != nil {
 		return failure(files, err)
 	}
-	r := Result{Status: OK, Output: samples.Literal(output), Files: next, Snapshot: snap}
+	r := Result{Status: OK, Output: samples.Literal(output), Files: next, Snapshot: snap, Why: trace}
 	if len(proposals) > 0 {
 		r.Status = Unconfirmed
 		r.Message = "this answer comes from code with fewer than two examples; confirm the proposed answers that are right"

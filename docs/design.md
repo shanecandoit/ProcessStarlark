@@ -256,6 +256,35 @@ function is ready.
 - Cost: an unready function's callers get unconfirmed answers. The CLI says so
   on every such run.
 
+### D20. `park run --why` shows where an answer came from
+**Implemented** · 2026-11-06
+
+```text
+$ park run --why 'Shipping.quote("FR", 800)'
+2799
+  Shipping.quote(country="FR", grams=800) = 2799  code     shipping.star:8
+    Zones.zone(country="FR") = "international"    example  zones.star:7
+```
+
+With `--why`, the engine records every dispatched call as a tree: the call,
+its answer, and its source, with a location. The sources are `example` (where
+the example is written), `code` (the function's `def`), `unconfirmed code`
+(code with fewer than two examples, D18), and `unknown` (it becomes a
+question, D16). A call that fails shows `?`, and only the innermost failure
+carries the error text. Starlark has no `try`, so a failing callee always fails
+its caller. The tree goes to stdout after the answer, or to stderr before the
+question or error.
+
+- Why: examples outrank code (D6), so a wrong example wins silently. The tree
+  makes every winning example visible, with a place to go and fix it.
+- **`--why` doesn't read the cache.** It recomputes, so every answer's tree is
+  complete. A cache hit would be a leaf with no subtree. Results are pure
+  (D13), so the answer is the same; only the time differs. Cache writes still
+  happen.
+- Cost: none without the flag; dispatch skips recording entirely.
+- The playground always records the tree and shows it under each answer
+  ("Why this answer"), where each location opens the file at that line.
+
 ## Playground
 
 ### D19. The browser runs the same engine, on files in memory

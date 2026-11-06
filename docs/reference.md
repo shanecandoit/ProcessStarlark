@@ -190,7 +190,7 @@ park list
 ```text
 init [DIR]                        Create an empty project and catalog
 list                              List processes and function readiness
-run 'P.fn(args)'                  Run a call; unanswered calls go to questions.txt
+run [--why] 'P.fn(args)'          Run a call; unanswered calls go to questions.txt
 example add 'P.fn(args) == value' Add an example to the function's module
 example remove 'P.fn(args)'       Remove an example wherever it is written
 test [P.fn]                       Check examples against implementations
@@ -200,6 +200,21 @@ build                             Validate and regenerate park.html
 - Calls are one Starlark expression with literal arguments. Quote the whole
   call for the shell: `park run 'Math.add(9, right=6)'`.
 - Output is printed as a Starlark literal, such as `["ix", "+", "vi"]`.
+- `run --why` also prints every call the answer depended on, indented by
+  depth, with where each answer came from:
+
+  ```text
+  $ park run --why 'RomanAdd.eval("ix + i")'
+  10
+    RomanAdd.eval(text="ix + i") = 10  code     roman_add.star:11
+      RomanParse.parse(text="ix") = 9  example  roman_parse.star:4
+      RomanParse.parse(text="i") = 1   code     roman_parse.star:9
+  ```
+
+  Sources are `example`, `code`, `unconfirmed code`, `unknown` (the call
+  became a question), and `failed` (with the error). A call that didn't return
+  shows `?`. `--why` recomputes rather than reading `.cache/`, so the tree is
+  always complete.
 - `example add` writes the line into the target function's own module, after
   that module's last example. `example remove` deletes the example wherever it
   is written.
@@ -266,6 +281,8 @@ and the catalog follow the rules on this page. The differences:
 - The project lives in the browser: saved locally, and shareable as a link
   that holds every file.
 - There's no `.cache/`; every call is computed fresh.
+- Every run shows "Why this answer", the same tree as `park run --why`.
+  Each location opens that line in the editor.
 - Questions appear in a panel. Answering one adds the example, exactly like
   `park example add`, then reruns the last call.
 - *Download* saves a zip that the CLI opens as a normal project.
@@ -277,9 +294,8 @@ See [plan-web-playground.md](plan-web-playground.md) for how it's built.
 - **v2 call samples:** keep each function's first few and most recent few
   calls as canonical JSON records, to show real usage. These samples are
   separate from authored examples and never count toward readiness.
-- **Next:** `park run --why`, which shows where each answer came from
-  (an example, code, or the cache) for every call it made.
-- **Later:** per-function content hashing, nested processes, and
+- **Later:** per-function content hashing, overrides that answer calls
+  without checking code (D17), nested processes, and
   synthesizing implementations from examples. See
   [Direction](ideas-direction.md) and the
   open questions in [Design decisions](design.md#open-questions).

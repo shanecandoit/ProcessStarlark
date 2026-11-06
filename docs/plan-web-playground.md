@@ -1,6 +1,6 @@
 # Plan: browser playground
 
-Status: phases 1 and 2 done, 2026-11-06. Direction:
+Status: phases 1 and 2 done, phase 3 started (Why view), 2026-11-06. Direction:
 [ideas-direction.md](ideas-direction.md).
 
 Run it locally from the repository root:
@@ -55,7 +55,8 @@ state between calls, which keeps the bridge small and easy to test.
 Every operation returns a `workspace.Result`: a status (`ok`, `unconfirmed`,
 `unresolved`, `failed`, `error`), the output or message, the new file map,
 and a snapshot (processes, functions, examples as literals, open questions,
-and the rendered `park.html`).
+and the rendered `park.html`). A run also returns `why`, its provenance
+tree (D20).
 
 ## Seams needed in the Go code
 
@@ -119,8 +120,9 @@ tests. `cmd/park-wasm` is a thin `syscall/js` bridge over it.
 
 ### Phase 3: shows off the idea
 
-- **Why view:** the `--why` provenance tree (ideas #1), drawn as a call tree
-  with example and code nodes coloured differently.
+- **Why view: done.** Every run shows the `--why` tree (D20) under the
+  answer, with sources coloured and each location opening the file at that
+  line. `workspace.Run` always records it and returns it as `why`.
 - **Fill-and-resume:** answer the innermost question in place and the
   original call reruns automatically (ideas #5). A first cut exists: answering
   any question reruns the last call. Next: show the chain of questions one

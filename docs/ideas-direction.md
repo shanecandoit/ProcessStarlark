@@ -38,7 +38,9 @@ People will ask "how is this different from X?" first.
 
 ### 1. `park run --why`: provenance for every answer
 
-**Status: next.** Because examples outrank code, a wrong example silently wins.
+**Status: done** ([D20](design.md#d20-park-run---why-shows-where-an-answer-came-from)),
+in the CLI and the playground. Because examples outrank code, a wrong example
+silently wins.
 Provenance shows where an answer came from, recursively:
 
 ```text
@@ -49,12 +51,12 @@ $ park run --why 'Shipping.quote("DE", 800)'
 ```
 
 Each node is one dispatched call: the call, its output, and its source
-(`example` with location, `code`, `cache`, or `unconfirmed code`). The engine
-already dispatches every call through one function, so recording a call tree
-is a small change. The same tree feeds the playground's "why" view.
+(`example`, `code`, `unconfirmed code`, or `unknown`) with a location. The
+same tree feeds the playground's "Why this answer" panel.
 
-Open: show cache hits as their own kind, or as `code` with a marker? A cache
-hit has no subtree unless the tree is cached too.
+Settled: `--why` recomputes instead of reading the cache, so there is no
+`cache` kind and every tree is complete. If per-function hashing (#3) lands,
+caching the tree beside the result would bring cache hits back.
 
 ### 2. Spec versus override (resolving D17)
 
@@ -129,8 +131,8 @@ question reruns the last call.
 
 **Status: phases 1 and 2 done** (runs, shares, saves, downloads). See
 [plan-web-playground.md](plan-web-playground.md). It's the biggest reach
-multiplier: nothing to install, and `park.html` becomes live. Next: host it
-publicly, then the `--why` view.
+multiplier: nothing to install, and `park.html` becomes live. The `--why`
+view is in. Next: host it publicly.
 
 ### 7. Write-up
 

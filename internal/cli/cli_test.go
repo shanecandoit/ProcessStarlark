@@ -663,3 +663,28 @@ func TestExampleProjects(t *testing.T) {
 		t.Errorf("the doc shows %d modules but examples/ has %d", shown, len(files))
 	}
 }
+
+func TestRunWhy(t *testing.T) {
+	root := fixture(t)
+	success(t, root, "run", `RomanAdd.eval("ix + i")`) // Warm the cache; --why must still show every call.
+	out := success(t, root, "run", "--why", `RomanAdd.eval("ix + i")`)
+	want := `10
+  RomanAdd.eval(text="ix + i") = 10  code     roman_add.star:11
+    RomanParse.parse(text="ix") = 9  example  roman_parse.star:4
+    RomanParse.parse(text="i") = 1   code     roman_parse.star:9
+`
+	if out != want {
+		t.Fatalf("got\n%s\nwant\n%s", out, want)
+	}
+	if out := success(t, root, "run", `RomanAdd.eval("ix + i")`); out != "10\n" {
+		t.Fatal("tree printed without --why:", out)
+	}
+	write(t, root, "zones.star", "Process Zones:\n    def zone(country): pass\n")
+	write(t, root, "ship.star", "Process Ship:\n    example: cost(\"US\") == 1\n    example: cost(\"FR\") == 2\n\n    def cost(country):\n        result = len(Zones.zone(country))\n        return result\n")
+	code, out, err := invoke(t, root, "run", "--why", `Ship.cost("DE")`)
+	if code != 3 || out != "" || !strings.Contains(err, `  Ship.cost(country="DE") = ?     code     ship.star:5
+    Zones.zone(country="DE") = ?  unknown  zones.star:2
+park: no answer for Zones.zone`) {
+		t.Fatalf("%d %q %s", code, out, err)
+	}
+}

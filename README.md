@@ -93,6 +93,7 @@ go build -o park ./cmd/park
 ./park run 'RomanParse.parse("xiv")'                  # 14, from the code
 ./park run 'RomanAdd.eval("ix + vi")'                 # 15, from an example
 ./park run 'RomanAdd.eval("iv + i")'                  # 5, from the code
+./park run --why 'RomanAdd.eval("ix + i")'            # 10, and where each part came from
 ```
 
 Then open `park.html` in this folder to see every function and its examples.

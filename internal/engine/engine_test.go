@@ -171,3 +171,36 @@ func TestUnconfirmedCodeRunsAsProposals(t *testing.T) {
 		t.Fatalf("example: %v %+v", out, e.Proposals())
 	}
 }
+
+func TestWhyRecordsSourcesAndInnermostFailure(t *testing.T) {
+	e, _ := load(t, "value, 2")
+	e.Why = true
+	if _, err := run(t, e, "Caller.call", map[string]any{"value": int64(3)}); err != nil {
+		t.Fatal(err)
+	}
+	tr := e.Trace()
+	if tr.Source != SourceCode || tr.Answer() != "32" || len(tr.Steps) != 1 {
+		t.Fatalf("%+v", tr)
+	}
+	if s := tr.Steps[0]; s.Call() != "Math.add(left=3, right=2)" || s.Source != SourceCode || s.Location() != "math.star:5" {
+		t.Fatalf("%+v", s)
+	}
+	if _, err := run(t, e, "Caller.call", map[string]any{"value": int64(1)}); err != nil {
+		t.Fatal(err)
+	}
+	if s := e.Trace().Steps[0]; s.Source != SourceExample || s.Location() != "math.star:2" || s.Answer() != "12" {
+		t.Fatalf("example step %+v", s)
+	}
+	if _, err := run(t, e, "Caller.call", map[string]any{"value": "x"}); err == nil {
+		t.Fatal("string * int succeeded")
+	}
+	tr = e.Trace()
+	inner := tr.Steps[0]
+	if !tr.Failed || tr.Error != "" || !inner.Failed || inner.Error == "" || inner.Answer() != "?" {
+		t.Fatalf("failure not on innermost step: %+v %+v", tr, inner)
+	}
+	e.Why = false
+	if _, err := run(t, e, "Caller.call", map[string]any{"value": int64(3)}); err != nil || e.Trace() != nil {
+		t.Fatal("trace recorded without Why")
+	}
+}

@@ -82,6 +82,11 @@ type Engine struct {
 	depth      int
 	Testing    bool
 	Bypass     string
+	// Why records a provenance tree for each Run (see Trace). It also skips
+	// cache reads, so every answer's tree is complete.
+	Why   bool
+	trace *Step
+	stack []*Step
 }
 
 func New(p *project.Project) (*Engine, error) {
@@ -361,6 +366,8 @@ func (e *Engine) Proposals() []Proposal { return e.proposals }
 func (e *Engine) Run(ctx context.Context, qualified string, input any) (any, error) {
 	e.unresolved = nil
 	e.proposals = nil
+	e.trace = nil
+	e.stack = nil
 	thread := &starlark.Thread{Name: qualified}
 	thread.SetMaxExecutionSteps(MaxSteps)
 	done := make(chan struct{})
@@ -382,6 +389,38 @@ func (e *Engine) Run(ctx context.Context, qualified string, input any) (any, err
 	return output, err
 }
 func (e *Engine) dispatch(thread *starlark.Thread, qualified string, raw any) (any, error) {
+	if !e.Why {
+		return e.resolve(thread, qualified, raw, nil)
+	}
+	step := &Step{Function: qualified}
+	if n := len(e.stack); n > 0 {
+		parent := e.stack[n-1]
+		parent.Steps = append(parent.Steps, step)
+	} else {
+		e.trace = step
+	}
+	e.stack = append(e.stack, step)
+	out, err := e.resolve(thread, qualified, raw, step)
+	e.stack = e.stack[:len(e.stack)-1]
+	if err == nil {
+		step.Output = out
+		return out, nil
+	}
+	step.Failed = true
+	// Starlark has no try/except, so a failing callee always fails its
+	// caller. Only the innermost failure carries the error text.
+	if k := len(step.Steps); k > 0 && step.Steps[k-1].Failed {
+		return out, err
+	}
+	if step.Source != SourceUnknown {
+		step.Error = err.Error()
+	}
+	return out, err
+}
+
+// resolve answers one call: an example, then the cache, then code. When step
+// is non-nil it records the input and where the answer came from.
+func (e *Engine) resolve(thread *starlark.Thread, qualified string, raw any, step *Step) (any, error) {
 	_, f, err := e.Project.Function(qualified)
 	if err != nil {
 		return nil, err
@@ -395,13 +434,25 @@ func (e *Engine) dispatch(thread *starlark.Thread, qualified string, raw any) (a
 		return nil, err
 	}
 	key := string(canonical)
+	if step != nil {
+		step.Inputs, step.Input = f.Inputs, input
+	}
 	bypass := e.Testing && e.Bypass == qualified
 	if !bypass {
 		if out, ok := f.Index[key]; ok {
+			if step != nil {
+				step.Source = SourceExample
+				for _, ex := range f.Examples {
+					if samples.Key(ex.Input) == key {
+						step.Path, step.Line = ex.Path, ex.Line
+						break
+					}
+				}
+			}
 			return out, nil
 		}
 	}
-	if !e.Testing && e.Cache != nil {
+	if !e.Testing && !e.Why && e.Cache != nil {
 		if out, ok, err := e.Cache.Get(qualified, e.Project.Revision, input); err != nil {
 			return nil, err
 		} else if ok {
@@ -412,11 +463,20 @@ func (e *Engine) dispatch(thread *starlark.Thread, qualified string, raw any) (a
 	if body == nil {
 		u := &Unresolved{Function: qualified, Inputs: f.Inputs, Input: input}
 		e.unresolved = u
+		if step != nil {
+			step.Source, step.Path, step.Line = SourceUnknown, f.Path, f.Line
+		}
 		return nil, u
 	}
 	// Code without two examples still runs, but its answers are only proposals
 	// until a person confirms them as examples.
 	unconfirmed := !f.Ready()
+	if step != nil {
+		step.Source, step.Path, step.Line = SourceCode, f.Path, f.Line
+		if unconfirmed {
+			step.Source = SourceUnconfirmed
+		}
+	}
 	callKey := qualified + "\x00" + key
 	if e.active[callKey] {
 		return nil, fmt.Errorf("recursive call repeats %s(%s)", qualified, key)

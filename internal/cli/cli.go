@@ -23,7 +23,7 @@ Usage: park [--root PATH] COMMAND [FLAGS] [OPERANDS]
 
   init [DIR]                        Create an empty project and catalog
   list                              List processes and function readiness
-  run 'P.fn(args)'                  Run a call; unanswered calls go to questions.txt
+  run [--why] 'P.fn(args)'          Run a call; unanswered calls go to questions.txt
   example add 'P.fn(args) == value' Add an example to the function's module
   example remove 'P.fn(args)'       Remove an example wherever it is written
   test [P.fn]                       Check examples against implementations
@@ -354,6 +354,7 @@ func (c *CLI) example(p *project.Project, args []string) error {
 }
 func (c *CLI) run(ctx context.Context, p *project.Project, args []string) error {
 	fs := c.flags("run")
+	why := fs.Bool("why", false, "show where the answer came from: each call, its answer, and its example or code")
 	if err := parse(fs, args); err != nil {
 		return err
 	}
@@ -368,9 +369,16 @@ func (c *CLI) run(ctx context.Context, p *project.Project, args []string) error 
 	if err != nil {
 		return err
 	}
+	e.Why = *why
 	callCtx, cancel := context.WithTimeout(ctx, engine.Timeout)
 	output, err := e.Run(callCtx, qualified, input)
 	cancel()
+	// The tree goes to stdout with an answer, and to stderr with a failure.
+	if trace := e.Trace(); trace != nil && err != nil {
+		if werr := engine.WriteTrace(c.Err, trace); werr != nil {
+			return werr
+		}
+	}
 	var unresolved *engine.Unresolved
 	if errors.As(err, &unresolved) {
 		return c.ask(p, unresolved)
@@ -382,6 +390,11 @@ func (c *CLI) run(ctx context.Context, p *project.Project, args []string) error 
 		return fail(1, "%v", err)
 	}
 	fmt.Fprintln(c.Out, samples.Literal(output))
+	if trace := e.Trace(); trace != nil {
+		if err := engine.WriteTrace(c.Out, trace); err != nil {
+			return err
+		}
+	}
 	return c.propose(p, e.Proposals())
 }
 

@@ -324,6 +324,22 @@ function showResult(r, note) {
   if (where && where.file in state.files) {
     text.append(" ", el("a", { href: "#", onclick: (e) => { e.preventDefault(); openFile(where.file, where.line); } }, `Show ${where.file}:${where.line}`));
   }
+  $("why").hidden = !r.why;
+  $("whytree").replaceChildren(...(r.why ? [whyStep(r.why)] : []));
+}
+
+// whyStep renders one call of a run's provenance tree (park run --why): the
+// call, its answer, where the answer came from, and the calls it made.
+function whyStep(s) {
+  const source = s.error ? "failed" : s.source || "failed";
+  const where = s.path ? `${s.path}:${s.line}` : "";
+  return el("li", {},
+    el("div", { class: "step" },
+      el("code", {}, s.call, el("span", { class: "eq" }, " = "), el("b", {}, s.output)),
+      el("span", { class: "src src-" + source.replace(/ /g, "-") }, source),
+      where ? el("a", { href: "#", onclick: (e) => { e.preventDefault(); openFile(s.path, s.line); } }, where) : null),
+    s.error ? el("p", { class: "step-error" }, s.error.split("\n")[0]) : null,
+    s.steps?.length ? el("ul", {}, s.steps.map(whyStep)) : null);
 }
 
 function toast(text) {

@@ -45,6 +45,13 @@ func TestRunFromExamplesAndCode(t *testing.T) {
 	expect(t, Run(ctx, files, `RomanParse.parse("ix")`), OK, "9")
 	expect(t, Run(ctx, files, `RomanParse.parse("xiv")`), OK, "14")
 	expect(t, Run(ctx, files, `RomanAdd.eval("iv + i")`), OK, "5")
+	w := Run(ctx, files, `RomanAdd.eval("ix + i")`).Why
+	if w == nil || w.Source != "code" || len(w.Steps) != 2 {
+		t.Fatalf("why: %+v", w)
+	}
+	if s := w.Steps[0]; s.Call != `RomanParse.parse(text="ix")` || s.Output != "9" || s.Source != "example" || s.Path != "roman_parse.star" || s.Line != 4 {
+		t.Fatalf("why step: %+v", s)
+	}
 	r := Load(files)
 	if !r.Snapshot.Valid || len(r.Snapshot.Processes) != 2 || !strings.Contains(r.Snapshot.Catalog, "RomanParse") {
 		t.Fatalf("bad snapshot: %+v", r.Snapshot)
