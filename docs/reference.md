@@ -19,15 +19,16 @@ in the [implementation plan](../plan.md).
   still runs, but every answer it computes is *unconfirmed*: printed, proposed
   as an example in the question queue, and never cached. Readiness is about
   authoring, not verification; use `park test` to check code against examples.
-- **Cache:** computed results go in `.cache/`. It's disposable and is
-  invalidated whenever any source file or the runtime changes.
+- **Cache:** the CLI stores computed results in `.cache/`. It's disposable and
+  is invalidated whenever any source file or the runtime changes. The browser
+  playground doesn't cache.
 
 ## How a call is resolved
 
 For each call, the runtime:
 
 1. Returns the example's answer if the call matches an example.
-2. Otherwise checks `.cache/` for the current project revision.
+2. Otherwise checks the cache (`.cache/`) for the current project revision.
 3. Otherwise executes the implementation, if there is one. If the function is
    ready, a successful output is cached. If not, the output is unconfirmed: it
    is returned, proposed in the question queue, and not cached, and neither is
@@ -256,11 +257,29 @@ code first, run it, and confirm two answers, and the function is ready.
 Exit codes: `0` success, `1` evaluation or test failure, `2` usage or project
 validation error, `3` unresolved call.
 
+## Browser playground
+
+The playground (`sh serve.sh`, then <http://localhost:8000>) runs the same
+engine compiled to WebAssembly, so calls, examples, questions, `park test`,
+and the catalog follow the rules on this page. The differences:
+
+- The project lives in the browser: saved locally, and shareable as a link
+  that holds every file.
+- There's no `.cache/`; every call is computed fresh.
+- Questions appear in a panel. Answering one adds the example, exactly like
+  `park example add`, then reruns the last call.
+- *Download* saves a zip that the CLI opens as a normal project.
+
+See [plan-web-playground.md](plan-web-playground.md) for how it's built.
+
 ## Roadmap
 
 - **v2 call samples:** keep each function's first few and most recent few
   calls as canonical JSON records, to show real usage. These samples are
   separate from authored examples and never count toward readiness.
-- **Later:** per-function versions, nested processes, and synthesizing
-  implementations from examples. See the
+- **Next:** `park run --why`, which shows where each answer came from
+  (an example, code, or the cache) for every call it made.
+- **Later:** per-function content hashing, nested processes, and
+  synthesizing implementations from examples. See
+  [Direction](ideas-direction.md) and the
   open questions in [Design decisions](design.md#open-questions).

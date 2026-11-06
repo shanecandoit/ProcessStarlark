@@ -42,8 +42,11 @@ describe the expected behavior and should remain covered as the tool evolves.
 ## Project format
 
 The repository contains `cmd/park` and internal `cli`, `project`, `source`,
-`engine`, `samples`, and `catalog` packages. Ship a copyable flat project in
-`fixtures/roman/`:
+`engine`, `samples`, and `catalog` packages. The browser playground adds
+`internal/workspace` (the same operations on files held in memory),
+`cmd/park-wasm`, `cmd/playground-build`, and `web/`; see
+[plan-web-playground.md](docs/plan-web-playground.md). Ship a copyable flat
+project in `fixtures/roman/`:
 
 ```text
 roman_parse.star
@@ -232,7 +235,9 @@ For each dispatched call:
 
 1. Bind positional and keyword arguments to the named inputs and validate
    them, then check authored examples.
-2. Check the computed cache for the current execution revision.
+2. Check the computed cache for the current execution revision. The cache is
+   the engine's `Cache` interface: the disk cache for projects loaded from a
+   directory, none for projects loaded from memory.
 3. If a body exists, execute it with a step limit and cancellation support and
    validate the result. If the function has two distinct authored examples,
    cache success. Otherwise record the result as a proposal and cache nothing

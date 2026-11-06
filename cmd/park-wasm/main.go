@@ -54,6 +54,7 @@ func main() {
 	api.Set("test", bridge(func(f workspace.Files, a []string) workspace.Result { return workspace.Test(ctx, f, arg(a, 0)) }))
 	api.Set("addExample", bridge(func(f workspace.Files, a []string) workspace.Result { return workspace.AddExample(f, arg(a, 0)) }))
 	api.Set("removeExample", bridge(func(f workspace.Files, a []string) workspace.Result { return workspace.RemoveExample(f, arg(a, 0)) }))
+	api.Set("archive", bridge(func(f workspace.Files, _ []string) workspace.Result { return workspace.Archive(f) }))
 	js.Global().Set("park", api)
 	if ready := js.Global().Get("onParkReady"); ready.Type() == js.TypeFunction {
 		ready.Invoke()

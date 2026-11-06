@@ -122,12 +122,15 @@ playground could suspend the computation at the innermost miss, take the
 answer inline, and continue. Because everything is pure and deterministic,
 "continue" can simply be a replay with the new example added. True
 continuation capture isn't necessary. The demo effect is the same: ask, answer,
-see the result.
+see the result. The playground already does the simple version: answering a
+question reruns the last call.
 
 ### 6. Browser playground
 
-**Status: planned.** See [plan-web-playground.md](plan-web-playground.md). It is
-the biggest reach multiplier: nothing to install, and `park.html` becomes live.
+**Status: phases 1 and 2 done** (runs, shares, saves, downloads). See
+[plan-web-playground.md](plan-web-playground.md). It's the biggest reach
+multiplier: nothing to install, and `park.html` becomes live. Next: host it
+publicly, then the `--why` view.
 
 ### 7. Write-up
 

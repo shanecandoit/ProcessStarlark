@@ -8,6 +8,8 @@
 package workspace
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -39,6 +41,7 @@ type Result struct {
 	Lines    []Line   `json:"lines,omitempty"`   // Test report lines.
 	Files    Files    `json:"files"`
 	Snapshot Snapshot `json:"snapshot"`
+	Archive  []byte   `json:"archive,omitempty"` // Zip bytes, from Archive (base64 in JSON).
 }
 
 type Line struct {
@@ -356,4 +359,37 @@ func edit(files Files, path string, b []byte, message string) Result {
 		return failure(files, err)
 	}
 	return Result{Status: OK, Message: message, Files: next, Snapshot: snap}
+}
+
+// ArchiveDir is the folder a downloaded project unpacks into.
+const ArchiveDir = "park-project"
+
+// Archive packs the project as a zip that the CLI can open: the modules, the
+// question queue, and a freshly rendered park.html. An invalid project is
+// still packed, without a catalog, so work is never trapped in the browser.
+func Archive(files Files) Result {
+	r := Load(files)
+	out := clone(r.Files)
+	if r.Snapshot.Valid {
+		out["park.html"] = r.Snapshot.Catalog
+	}
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	for _, name := range project.Names(out) {
+		if !strings.HasSuffix(name, ".star") && name != project.QuestionsFile && name != "park.html" {
+			continue
+		}
+		f, err := w.CreateHeader(&zip.FileHeader{Name: ArchiveDir + "/" + name, Method: zip.Deflate})
+		if err != nil {
+			return failure(files, err)
+		}
+		if _, err := f.Write([]byte(out[name])); err != nil {
+			return failure(files, err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		return failure(files, err)
+	}
+	r.Archive = buf.Bytes()
+	return r
 }

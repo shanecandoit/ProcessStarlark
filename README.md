@@ -96,6 +96,10 @@ go build -o park ./cmd/park
 ```
 
 Then open `park.html` in this folder to see every function and its examples.
+
+To try Park in a browser instead, run `sh serve.sh` and open
+<http://localhost:8000>. The playground runs the same engine, compiled to
+WebAssembly: edit the samples, run calls, and answer Park's questions inline.
 The root Roman demo is two files, `roman_parse.star` and `roman_add.star`, each
 holding its code and examples. A separate copy in `fixtures/roman/` is
 available for tests and experimentation; select it with `--root fixtures/roman`
@@ -109,9 +113,9 @@ before the command.
 - [Sample projects](docs/ideas-sample-projs.md): a game, a business tool, and
   geometry, each runnable from [`examples/`](examples).
 - [Implementation plan](plan.md): the full contract.
-- [Browser playground](docs/plan-web-playground.md): Park compiled to
-  WebAssembly. Build with `web/build.sh`, then serve `web/dist`.
+- [Browser playground](docs/plan-web-playground.md): how the playground is
+  built, and what's next for it.
 - [Direction](docs/ideas-direction.md): where Park goes next.
 
-**Status:** early. The command-line tool works end to end, and its details may
-still change.
+**Status:** early. The command-line tool and the browser playground work end to
+end, and their details may still change.

@@ -1,8 +1,16 @@
 # Plan: browser playground
 
-Status: phase 1 done, 2026-11-06. Build with `web/build.sh`, then serve
-`web/dist` with any static server, e.g. `python3 -m http.server -d web/dist 8000`. Direction:
+Status: phases 1 and 2 done, 2026-11-06. Direction:
 [ideas-direction.md](ideas-direction.md).
+
+Run it locally from the repository root:
+
+```sh
+sh serve.sh        # web/build.sh, then a static server on http://localhost:8000
+```
+
+`web/build.sh` alone writes `web/dist/`; any static server can host that
+folder.
 
 ## Goal
 
@@ -15,8 +23,10 @@ A static web page where someone can try Park with nothing installed:
 - run `park test`;
 - see the catalog (`park.html`) update live.
 
-It's a static site: no server, no accounts, no network after load. Hosting is
-any static host (GitHub Pages, or a claude.ai artifact).
+It's a static site: no server, no accounts. The only network requests after
+the page's own files are for the CodeMirror editor, from cdnjs; if they fail,
+the page falls back to a plain text box. Hosting is any static host (GitHub
+Pages, or a claude.ai artifact).
 
 ## Approach: the real engine, compiled to WebAssembly
 
@@ -32,14 +42,20 @@ receives the files and returns results plus any edited files. Go keeps no
 state between calls, which keeps the bridge small and easy to test.
 
 ```text
- browser (JS)                          Go (wasm)
- ─────────────                         ─────────
- files: {name: text}  ── JSON ──▶  park.snapshot(files)
- editor, call box                  park.run(files, call)
- questions panel      ◀── JSON ──  park.test(files)
- catalog iframe                    park.addExample(files, line)
-                                   park.removeExample(files, call)
+ page (app.js)                  worker.js                 Go (park.wasm)
+ ─────────────                  ─────────                 ──────────────
+ files: {name: text}  ─ msg ─▶  park[op](JSON files) ─▶  park.load(files)
+ editor, call box                                         park.run(files, call)
+ questions panel      ◀─ msg ─  JSON result        ◀─    park.test(files, only)
+ function tables                                          park.addExample(files, line)
+ catalog iframe                                           park.removeExample(files, call)
+                                                          park.archive(files)
 ```
+
+Every operation returns a `workspace.Result`: a status (`ok`, `unconfirmed`,
+`unresolved`, `failed`, `error`), the output or message, the new file map,
+and a snapshot (processes, functions, examples as literals, open questions,
+and the rendered `park.html`).
 
 ## Seams needed in the Go code
 
@@ -72,32 +88,50 @@ tests. `cmd/park-wasm` is a thin `syscall/js` bridge over it.
   confirm buttons, a test button, and the rendered catalog in an iframe.
 - Bundled examples (Roman numerals, robot, shipping, shapes) in a picker.
 - Answering a question reruns the last call, a first cut of fill-and-resume.
-- `web/build.sh` builds `web/dist/` (`index.html`, `park.wasm`,
-  `wasm_exec.js`). Serve locally with any static server.
+- `web/build.sh` builds `web/dist/`: the page, `park.wasm`, Go's
+  `wasm_exec.js`, and `samples.js` (written by `cmd/playground-build`).
 
-### Phase 2: worth sharing
+### Phase 2: worth sharing (done)
 
-- **Share links:** the file map, compressed, in the URL fragment. No server.
-- **Persistence:** the last project in `localStorage`, with a reset button.
-- **Run off the main thread:** move Go into a Web Worker so a long call can't
-  freeze the page. The step limit already bounds work.
-- **Download:** the project as a zip that the CLI can open.
-- **Editor:** CodeMirror with Python highlighting and error markers at the
-  reported line.
-- **Size:** measure the wasm bundle. Try `-ldflags="-s -w"` and gzip/brotli
-  first. TinyGo only if needed; it may not support everything starlark-go
-  uses.
+- **Share links.** *Share* copies a link whose fragment is
+  `#p=` + base64url(deflate-raw(JSON `{v: 1, files, call, active}`)). Fragments
+  never reach a server. The shipping sample makes a link of about 700
+  characters. Opening a link loads the project as "Shared project", saves it
+  locally, and clears the fragment.
+- **Persistence.** The project, the call box, and the open file are saved to
+  `localStorage` (`park-playground-v1`) on every change, and restored on
+  reload. *Reset* restores the sample's original files, after a confirmation.
+  A shared project has no sample to reset to; pick one from the list instead.
+- **Off the main thread.** Go runs in `worker.js`. Operations are queued and
+  run one at a time, each on the files as they are when it starts; text typed
+  while an operation runs is kept. If an operation takes longer than 0.8 s, a
+  *Stop* button appears; it terminates the worker and starts a fresh one.
+- **Download.** *Download* saves `park-project.zip`: the modules,
+  `questions.txt`, and a freshly rendered `park.html` in a `park-project/`
+  folder. `workspace.Archive` builds it in Go, and a test checks that the CLI
+  opens it and that `park build` reproduces its `park.html` byte for byte.
+- **Editor.** CodeMirror 5 with Python highlighting, line numbers, one
+  undo history per file, and colours that follow light and dark mode. An
+  error that names `file.star:line` marks that line, and clicking the error
+  opens it. Without CodeMirror, the plain text box still works.
+- **Size.** 9.4 MB stripped (`-ldflags="-s -w"`), 2.4 MB gzipped. Good enough;
+  TinyGo isn't worth the risk to starlark-go compatibility yet.
 
 ### Phase 3: shows off the idea
 
 - **Why view:** the `--why` provenance tree (ideas #1), drawn as a call tree
   with example and code nodes coloured differently.
 - **Fill-and-resume:** answer the innermost question in place and the
-  original call reruns automatically (ideas #5).
+  original call reruns automatically (ideas #5). A first cut exists: answering
+  any question reruns the last call. Next: show the chain of questions one
+  call raises, and answer them in order.
 - **Guided tour:** the README's Roman numeral story as steps a reader clicks
   through.
-- **Function tables:** each function shown as a table (inputs as columns,
-  output last), with rows added from answered questions highlighted.
+- **Function tables:** done early, in phase 1. Each function is a table with
+  inputs as columns and the output last; rows added by an answer are
+  highlighted, and each row can be removed.
+- **Hosting:** publish `web/dist` (GitHub Pages or an artifact) and link it
+  from the README.
 
 ## Non-goals
 
@@ -106,10 +140,15 @@ model calls. The playground stays a static page.
 
 ## Risks
 
-- **Bundle size.** Measured in phase 1: 9.0 MB stripped, 2.3 MB gzipped.
-  Acceptable for a demo; the host must serve it compressed.
-- **Main-thread blocking.** A call can use up to a million Starlark steps.
-  Acceptable for phase 1; fixed by the worker in phase 2.
+- **Bundle size.** 9.4 MB stripped, 2.4 MB gzipped. Acceptable for a demo;
+  the host must serve it compressed.
+- **Long calls.** Solved by the worker and *Stop*. Inside the worker, the
+  engine's five-second deadline may not fire during a tight Starlark loop
+  (wasm runs one goroutine at a time), so the step limit and *Stop* are what
+  actually bound a call.
+- **Share link length.** Links grow with the project. Browsers accept
+  very long fragments, but chat apps and email may truncate them. Download is
+  the fallback for big projects.
 - **Semantic drift.** Avoided by construction: the playground calls the same
   packages as the CLI, and `internal/workspace` tests check that the CLI and
   the workspace write identical `questions.txt` and `park.html` for the same

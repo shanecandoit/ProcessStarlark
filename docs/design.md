@@ -181,6 +181,10 @@ Computed results are cached under a project-wide revision: a hash of all
 sources and the codec/engine version. Any edit invalidates the whole cache,
 which is always safe to delete. There is no per-function versioning yet.
 
+The cache sits behind the engine's `Cache` interface. The CLI uses the disk
+cache in `.cache/`; projects loaded from memory (the browser playground) run
+with no cache. See D19.
+
 ### D15. No lock or recovery journal
 **Implemented** · 2026-11-05, supersedes the v1 journal and project lock
 
@@ -252,6 +256,24 @@ function is ready.
 - Cost: an unready function's callers get unconfirmed answers. The CLI says so
   on every such run.
 
+## Playground
+
+### D19. The browser runs the same engine, on files in memory
+**Implemented** · 2026-11-06
+
+The playground compiles the Go packages to WebAssembly rather than
+reimplementing Park in JavaScript. The page owns the project as a map from file
+name to text; every operation (`internal/workspace`) takes the whole map and
+returns the new map plus a snapshot. Go keeps no state between calls.
+
+- Why: one implementation means one semantics. A test checks that the CLI
+  and the workspace write identical `questions.txt` and `park.html` for the
+  same commands, and that a downloaded project opens in the CLI.
+- How: project loading, the result cache, and the question queue each got an
+  in-memory seam (`project.FromFiles`, `engine.Cache`,
+  `project.ParseQuestions`), and `park test` moved into `engine.Check`.
+- Cost: a 2.4 MB (gzipped) download, and no cache in the browser.
+
 ## Resolved questions
 
 - **Deliberate exceptions — resolved by [D17](#d17-every-example-is-a-strict-implementation-check).**
@@ -263,10 +285,13 @@ function is ready.
 ## Open questions
 
 - **Audience.** The README addresses non-programmers; the docs and CLI assume
-  programmers. Pick one.
+  programmers. Pick one. [Direction](ideas-direction.md#positioning)
+  recommends programmers and language people.
 - **Examples for undeclared functions.** Currently an example must name a
   declared function (with or without a body), and Park reports an error
   otherwise; declaring one is a one-line `def f(x): pass`. Should examples be
   allowed to name functions that don't exist yet?
 - **Per-function versions.** Version functions by a hash of their bodies, so
-  that editing one function doesn't invalidate every cached result?
+  that editing one function doesn't invalidate every cached result? Explored
+  as Unison-style content hashing in
+  [Direction](ideas-direction.md#3-per-function-content-hashing-exploring-unison-ideas).

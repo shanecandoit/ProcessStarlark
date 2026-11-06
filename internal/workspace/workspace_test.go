@@ -1,8 +1,10 @@
 package workspace
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -136,5 +138,50 @@ func TestMatchesCLI(t *testing.T) {
 		if got != string(want) {
 			t.Fatalf("%s differs between the CLI and the workspace", name)
 		}
+	}
+}
+
+// A downloaded project must open in the CLI as-is.
+func TestArchiveOpensInCLI(t *testing.T) {
+	r := Run(context.Background(), readDir(t, "../../examples/shipping"), `Shipping.quote("JP", 100)`)
+	r = Archive(r.Files)
+	if r.Status != Unresolved && r.Status != OK || len(r.Archive) == 0 {
+		t.Fatalf("archive failed: %s %s", r.Status, r.Message)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(r.Archive), int64(len(r.Archive)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ArchiveDir), 0755); err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, f := range zr.File {
+		names = append(names, f.Name)
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(rc)
+		rc.Close()
+		if err := os.WriteFile(filepath.Join(root, f.Name), b, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if strings.Join(names, ",") != "park-project/park.html,park-project/questions.txt,park-project/shipping.star,park-project/zones.star" {
+		t.Fatalf("unexpected entries: %v", names)
+	}
+	dir := filepath.Join(root, ArchiveDir)
+	html, _ := os.ReadFile(filepath.Join(dir, "park.html"))
+	var out, errout bytes.Buffer
+	if code := cli.Main([]string{"--root", dir, "list"}, &out, &errout); code != 0 || !strings.Contains(out.String(), `Zones.zone("JP")`) {
+		t.Fatalf("CLI could not open the archive: %d %s %s", code, out.String(), errout.String())
+	}
+	if code := cli.Main([]string{"--root", dir, "build"}, &out, &errout); code != 0 {
+		t.Fatal(errout.String())
+	}
+	if rebuilt, _ := os.ReadFile(filepath.Join(dir, "park.html")); !bytes.Equal(rebuilt, html) {
+		t.Fatal("archived park.html differs from a CLI rebuild")
 	}
 }

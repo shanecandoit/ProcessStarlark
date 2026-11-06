@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Park Playground</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -13,14 +14,18 @@
   <label class="picker">Project
     <select id="sample"></select>
   </label>
-  <button id="reset" type="button" class="quiet">Reset</button>
+  <div class="actions">
+    <button id="share" type="button" class="quiet" title="Copy a link that holds this whole project">Share</button>
+    <button id="download" type="button" class="quiet" title="Download the project as a zip the park CLI can open">Download</button>
+    <button id="reset" type="button" class="quiet" title="Restore the sample's original files">Reset</button>
+  </div>
 </header>
 
 <main class="layout">
   <section class="pane source" aria-label="Source files">
     <div class="tabs" id="tabs" role="tablist"></div>
     <textarea id="editor" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Source"></textarea>
-    <p id="problem" class="problem" hidden></p>
+    <p id="problem" class="problem" role="status" hidden></p>
   </section>
 
   <section class="pane work" aria-label="Run and answer">
@@ -28,6 +33,7 @@
       <label for="call">Call</label>
       <input id="call" spellcheck="false" autocomplete="off" placeholder='RomanParse.parse("xiv")'>
       <button type="submit">Run</button>
+      <button id="stop" type="button" class="quiet" hidden>Stop</button>
     </form>
     <div id="result" class="result" hidden>
       <span id="status" class="badge"></span>
@@ -53,8 +59,10 @@
   </section>
 </main>
 
+<div id="toast" class="toast" role="status" hidden></div>
 <div id="loading" class="loading">Loading Park…</div>
-<script src="wasm_exec.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
 <script src="samples.js"></script>
 <script src="app.js"></script>
 </body>
