@@ -4,7 +4,7 @@
   "start": "examples/shipping",
   "steps": [
     {
-      "text": "This project quotes shipping prices. Ops keeps the zone table in zones.star: just answers, no code. A developer wrote the pricing rule in shipping.star. Every function here is shown as a table of its examples.",
+      "text": "This project quotes shipping prices. Ops keeps the zone table in zones.star: just answers, no code. A developer wrote the pricing rule in shipping.star. Every function is also shown as a table of its examples, and you can edit those tables like a spreadsheet.",
       "open": "zones.star",
       "point": [
         "functions",
@@ -61,21 +61,49 @@
       ]
     },
     {
-      "role": "ops",
-      "text": "Customers don't type country codes. They type \"usa\" or \"germany\". Add a file with + file, name it region_alias, and replace its contents with this table.",
-      "snippet": "Process RegionAlias:\n    \"\"\"What customers type, mapped to a country code. Ops keeps this table.\"\"\"\n\n    example: known(\"us\") == \"US\"\n    example: known(\"usa\") == \"US\"\n    example: known(\"america\") == \"US\"\n    example: known(\"ca\") == \"CA\"\n    example: known(\"fr\") == \"FR\"\n    example: known(\"de\") == \"DE\"\n    example: known(\"germany\") == \"DE\"\n\n    def known(name):\n        pass\n",
+      "role": "dev",
+      "text": "Customers don't type country codes. They type \"usa\" or \"germany\". The developer sets up an alias table for Ops: a function with no code and no rows yet. Add a file with + file, name it region_alias, and replace its contents with this.",
+      "snippet": "Process RegionAlias:\n    \"\"\"What customers type, mapped to a country code. Ops keeps this table.\"\"\"\n\n    def known(name):\n        pass\n",
       "point": [
         "addfile",
         "editor"
       ],
       "goal": {
-        "example": "RegionAlias.known(\"usa\")"
+        "function": "RegionAlias.known"
       },
       "skip": [
         {
           "setFile": {
             "file": "region_alias.star",
-            "text": "Process RegionAlias:\n    \"\"\"What customers type, mapped to a country code. Ops keeps this table.\"\"\"\n\n    example: known(\"us\") == \"US\"\n    example: known(\"usa\") == \"US\"\n    example: known(\"america\") == \"US\"\n    example: known(\"ca\") == \"CA\"\n    example: known(\"fr\") == \"FR\"\n    example: known(\"de\") == \"DE\"\n    example: known(\"germany\") == \"DE\"\n\n    def known(name):\n        pass\n"
+            "text": "Process RegionAlias:\n    \"\"\"What customers type, mapped to a country code. Ops keeps this table.\"\"\"\n\n    def known(name):\n        pass\n"
+          }
+        }
+      ]
+    },
+    {
+      "role": "ops",
+      "text": "That's your table now: RegionAlias.known, with one empty row. Fill it in like a spreadsheet. Copy these rows (as if from Excel or Sheets), click the empty row's first cell, and paste. You can also type a row and press Enter. Park writes each row into region_alias.star for you.",
+      "snippet": "us\tUS\nusa\tUS\namerica\tUS\nca\tCA\nfr\tFR\nde\tDE\ngermany\tDE\n",
+      "point": [
+        "function:RegionAlias.known"
+      ],
+      "goal": {
+        "all": [
+          {
+            "example": "RegionAlias.known(\"usa\")",
+            "output": "\"US\""
+          },
+          {
+            "example": "RegionAlias.known(\"germany\")",
+            "output": "\"DE\""
+          }
+        ]
+      },
+      "skip": [
+        {
+          "paste": {
+            "function": "RegionAlias.known",
+            "text": "us\tUS\nusa\tUS\namerica\tUS\nca\tCA\nfr\tFR\nde\tDE\ngermany\tDE\n"
           }
         }
       ]

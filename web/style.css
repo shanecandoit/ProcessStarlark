@@ -185,3 +185,17 @@ body.busy .runbox button[type="submit"] { opacity: .6; }
   .tourpanel { position: fixed; left: 8px; right: 8px; bottom: 8px; z-index: 5; max-height: 45vh; overflow: auto; margin: 0; }
   body.touring { padding-bottom: 46vh; }
 }
+
+/* Editable tables */
+tr.row { cursor: pointer; }
+tr.row:hover td { background: var(--code-bg); }
+td input.cell { width: 100%; min-width: 6em; box-sizing: border-box; padding: 2px 6px; font: 13px var(--mono); }
+tr.newrow input.cell { border-style: dashed; background: transparent; }
+tr.newrow input.cell:focus { border-style: solid; background: var(--panel); }
+tr.editing td, tr.newrow td { padding-top: 4px; padding-bottom: 4px; }
+td button.add { color: var(--accent); font-weight: 600; }
+.note { margin: 6px 0 0; padding: 6px 10px; border-left: 3px solid var(--ok); background: var(--code-bg); border-radius: 4px; font-size: 13.5px; }
+.note p { margin: 0; }
+.note .fail { margin-top: 4px; font-family: var(--mono); font-size: 12.5px; color: var(--bad); white-space: pre-wrap; }
+.note-warn { border-left-color: var(--warn); }
+.note-error { border-left-color: var(--bad); color: var(--bad); }

@@ -74,6 +74,16 @@ func main() {
 	api.Set("removeExample", bridge(func(f workspace.Files, a []string) workspace.Result { return workspace.RemoveExample(f, arg(a, 0)) }))
 	api.Set("dismiss", bridge(func(f workspace.Files, a []string) workspace.Result { return workspace.Dismiss(f, arg(a, 0)) }))
 	api.Set("goal", js.FuncOf(goal))
+	api.Set("putExample", bridge(func(f workspace.Files, a []string) workspace.Result {
+		var cells []string
+		if err := json.Unmarshal([]byte(arg(a, 1)), &cells); err != nil {
+			return workspace.Result{Status: workspace.Error, Message: "cells: " + err.Error(), Files: f}
+		}
+		return workspace.PutExample(ctx, f, arg(a, 0), cells, arg(a, 2))
+	}))
+	api.Set("pasteExamples", bridge(func(f workspace.Files, a []string) workspace.Result {
+		return workspace.PasteExamples(ctx, f, arg(a, 0), arg(a, 1))
+	}))
 	api.Set("archive", bridge(func(f workspace.Files, _ []string) workspace.Result { return workspace.Archive(f) }))
 	js.Global().Set("park", api)
 	if ready := js.Global().Get("onParkReady"); ready.Type() == js.TypeFunction {

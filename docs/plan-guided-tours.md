@@ -88,6 +88,7 @@ page already has after every operation. No extra engine calls.
 | `{"status": S}` | The last run's status was `S` (`ok`, `unresolved`, …). |
 | `{"question": C}` | `C` is an open question. |
 | `{"example": C, "output": O}` | Some function has an example for call `C` (with output `O`, if given). |
+| `{"function": F}` | `Process.function` `F` is declared. |
 | `{"not": G}` | Goal `G` does not hold. |
 | `{"all": [...]}` | Every listed goal holds. |
 
@@ -106,6 +107,8 @@ existing engine operations plus two plain file edits:
 
 - `{"run": "P.fn(args)"}`
 - `{"addExample": "P.fn(args) == value"}`
+- `{"paste": {"function": F, "text": T}}`: pastes spreadsheet rows into
+  `F`'s table, as a reader would (D21).
 - `{"dismiss": "P.fn(args)"}`: removes an open question without answering it.
   The playground's questions also got a **Dismiss** button for this.
 - `{"replace": {"file": F, "find": A, "with": B}}`: exact text, which must
@@ -124,7 +127,7 @@ when the operations succeed but the goal still doesn't hold.
 
 Steps name places, not CSS selectors, so the page layout can change without
 editing tours: `call`, `run`, `result`, `why`, `questions`, `functions`, `editor`,
-`addfile`, and `share`. `app.js` maps
+`addfile`, `share`, and `function:Process.fn` (that function's table). `app.js` maps
 each name to an element and draws an outline around it.
 
 ## Links and saved work
@@ -171,11 +174,12 @@ goal cases tests both.
 
 ## Tours to write
 
-1. **Two people, one function** (shipping, 10 steps; built):
+1. **Two people, one function** (shipping, 11 steps; built):
    1. A quote to Germany raises a question.
    2. Ops answers it, and the quote resumes at 2799.
    3. "Why this answer" shows where 2799 came from.
-   4. Ops adds a `RegionAlias` table of spellings customers type.
+   4. The developer declares an empty `RegionAlias.known` table, and Ops
+      fills it by pasting rows from a spreadsheet, without seeing source.
    5. "USA" isn't in the table, so it becomes a question. Ops dismisses it,
       because capitalization is a rule, not a fact.
    6. The developer writes `RegionAlias.code`, which lowercases and trims,

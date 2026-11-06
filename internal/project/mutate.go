@@ -167,3 +167,43 @@ func RemoveExample(p *Project, qualified string, raw map[string]any) (string, []
 	}
 	return "", nil, fmt.Errorf("no authored example for %s", FormatCall(qualified, f.Inputs, input))
 }
+
+// ReplaceExample rewrites the example for oldRaw in place, as a call on
+// newRaw with the given output. The example must be written in the function's
+// own module. It returns the module path and its new contents.
+func ReplaceExample(p *Project, qualified string, oldRaw, newRaw map[string]any, output any) (string, []byte, error) {
+	_, f, err := p.Function(qualified)
+	if err != nil {
+		return "", nil, err
+	}
+	old, err := f.BindInput(oldRaw)
+	if err != nil {
+		return "", nil, err
+	}
+	input, err := f.BindInput(newRaw)
+	if err != nil {
+		return "", nil, err
+	}
+	if _, err := samples.Canonical(output); err != nil {
+		return "", nil, err
+	}
+	oldKey, newKey := samples.Key(old), samples.Key(input)
+	if _, taken := f.Index[newKey]; taken && newKey != oldKey {
+		return "", nil, fmt.Errorf("duplicate example for %s", FormatCall(qualified, f.Inputs, input))
+	}
+	for _, ex := range f.Examples {
+		if samples.Key(ex.Input) != oldKey {
+			continue
+		}
+		if ex.Path != f.Path {
+			return "", nil, fmt.Errorf("the example for %s is written in %s; edit it there", FormatCall(qualified, f.Inputs, old), ex.Path)
+		}
+		lines := strings.Split(string(p.Files[ex.Path]), "\n")
+		first := lines[ex.Line-1]
+		indent := first[:len(first)-len(strings.TrimLeft(first, " \t"))]
+		text := indent + ExampleLine(f, input, output)
+		lines = append(lines[:ex.Line-1], append([]string{text}, lines[ex.EndLine:]...)...)
+		return ex.Path, []byte(strings.Join(lines, "\n")), nil
+	}
+	return "", nil, fmt.Errorf("no authored example for %s", FormatCall(qualified, f.Inputs, old))
+}

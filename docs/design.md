@@ -303,6 +303,34 @@ returns the new map plus a snapshot. Go keeps no state between calls.
   `project.ParseQuestions`), and `park test` moved into `engine.Check`.
 - Cost: a 2.4 MB (gzipped) download, and no cache in the browser.
 
+### D21. Tables are a view of example lines
+**Implemented** · 2026-11-06
+
+The playground shows each function as a table (inputs, then the output) and
+lets people edit it like a spreadsheet: type a row, click a row to change it,
+or paste rows copied from Excel or Sheets. Every edit becomes an ordinary
+`example:` line in the function's own module. A new row is added the way
+`park example add` adds it, and an edited row is rewritten in place. The
+`.star` file stays the only source of truth.
+
+Cells are typed as plain text and take their column's type. In a column
+whose values are all strings, `US` means `"US"`, and `02134` stays a string.
+In a column of whole numbers, text is rejected. In a new or mixed column, a
+cell is read as a Starlark literal if it is one, and as a string if not.
+Quotes keep a string exact, as in `" Germany "`.
+
+- Why: rule owners should never have to write Starlark syntax. The type of a
+  value comes from the examples already in the table, which is what a
+  spreadsheet user expects.
+- A paste is checked as a whole before anything is written. Rows already in
+  the table are skipped. Rows that would change an existing answer are listed
+  and left alone, because a paste shouldn't silently overwrite a decision.
+- After an edit, if the function has code, the code is run against its
+  examples, and any row it answers differently is noted under the table. The
+  row still stands (D6), and `park test` will flag it (D17).
+- Cost: in an empty or mixed column, `True`, `None`, and numbers are read as
+  values, not text. Quote them to keep them as text.
+
 ## Resolved questions
 
 - **Audience — resolved 2026-11-06.** The idea is explained for business

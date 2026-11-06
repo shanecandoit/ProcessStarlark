@@ -97,12 +97,14 @@ data processing, or for anything that has to be fast at scale.
 ## Where Park is today
 
 Early. The core works: examples, code, checks, questions, and "why" are all
-real, in a command-line tool and a browser playground. Examples are written in
-text files, in a format that is readable but still looks like code.
+real, in a command-line tool and a browser playground. In the playground,
+each function's examples are a table you can type into or paste spreadsheet
+rows into. Underneath, they're saved as text files that developers work
+with directly.
 
 Not built yet, and needed before a business team could use it day to day:
 
-- a table or form editor for examples and questions;
+- a table editor that stands on its own, without the code beside it;
 - accounts, a change history, and approvals;
 - an API so other systems can ask Park for answers.
 

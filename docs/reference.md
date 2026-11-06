@@ -284,6 +284,10 @@ and the catalog follow the rules on this page. The differences:
 - There's no `.cache/`; every call is computed fresh.
 - A guided tour (**Tour**, or a `#tour=shipping` link) walks through the
   shipping sample as Ops and as a developer. It opens on a first visit.
+- Function tables are editable (D21). Type a row in the blank last row and
+  press Enter, click a row to change it, or paste rows from a spreadsheet.
+  Each edit is written into the `.star` file as an example line. Cells take
+  their column's type, so `US` in a column of text means `"US"`.
 - Questions can be dismissed without answering, which is like deleting the
   line from `questions.txt`.
 - Every run shows "Why this answer", the same tree as `park run --why`.

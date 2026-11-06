@@ -20,6 +20,9 @@ const state = {
   view: "functions",
   sample: 0,          // sample the project started from; -1 for a shared link
   tour: null,         // {id, step, last: {call, status, output}} while a tour runs
+  editing: null,      // {fn, call}: the table row being edited
+  drafts: {},         // typed, unsaved table cells, by function and row
+  note: null,         // {fn, kind, text, lines}: what the last table edit did
 };
 
 function el(tag, props = {}, ...children) {
@@ -102,7 +105,7 @@ async function execute(op, args) {
     }
     if (result.snapshot) state.snapshot = result.snapshot;
     if (op === "run" && state.tour) state.tour.last = { call: args[0], status: result.status, output: result.output || "" };
-    if (op === "addExample") {
+    if (op === "addExample" || op === "putExample" || op === "pasteExamples") {
       const after = exampleKeys(state.snapshot);
       state.fresh = new Set([...after].filter((k) => !before.has(k)));
     } else if (op === "removeExample") {
@@ -124,7 +127,7 @@ async function execute(op, args) {
 function exampleKeys(snap) {
   const keys = new Set();
   for (const p of snap?.processes || []) {
-    for (const f of p.functions) for (const ex of f.examples) keys.add(f.qualified + "(" + ex.inputs.join(",") + ")");
+    for (const f of p.functions) for (const ex of f.examples) keys.add(rowKey(f.qualified, ex));
   }
   return keys;
 }
@@ -284,24 +287,88 @@ function renderFunctions() {
   box.replaceChildren(...procs.flatMap((p) => p.functions.map((f) => functionCard(f))));
 }
 
+// Each function is a table: inputs, then the output. Rows can be edited like
+// a spreadsheet; every change is an ordinary example line in the module.
 function functionCard(f) {
   const stateClass = f.state === "needs examples" ? "state needs" : "state";
   const head = el("tr", {}, ...f.inputs.map((n) => el("th", {}, n)), el("th", { class: "out" }, f.output), el("th"));
   const rows = f.examples.map((ex) => {
     const callText = `${f.qualified}(${ex.inputs.join(", ")})`;
-    const key = f.qualified + "(" + ex.inputs.join(",") + ")";
-    return el("tr", { class: state.fresh.has(key) ? "fresh" : "" },
+    if (state.editing?.fn === f.qualified && state.editing.call === callText) return editRow(f, [...ex.inputs, ex.output], callText);
+    return el("tr", { class: (state.fresh.has(rowKey(f.qualified, ex)) ? "fresh " : "") + "row", title: "Click to edit", onclick: () => { state.editing = { fn: f.qualified, call: callText }; renderFunctions(); focusRow(f.qualified, "tr.editing"); } },
       ...ex.inputs.map((v) => el("td", {}, v)),
       el("td", { class: "out" }, ex.output),
-      el("td", {}, el("button", { type: "button", class: "x", title: `Remove example ${callText}`, "aria-label": `Remove example ${callText}`, onclick: () => call("removeExample", callText) }, "×")));
+      el("td", {}, el("button", { type: "button", class: "x", title: `Remove example ${callText}`, "aria-label": `Remove example ${callText}`, onclick: (e) => { e.stopPropagation(); call("removeExample", callText); } }, "×")));
   });
-  return el("article", { class: "fn" },
+  rows.push(editRow(f, [], ""));
+  const note = state.note?.fn === f.qualified ? state.note : null;
+  return el("article", { class: "fn", "data-fn": f.qualified },
     el("header", {},
       el("code", {}, f.qualified.split(".")[0] + "." + f.signature),
       el("span", { class: stateClass }, f.state),
       el("a", { href: "#", class: "state", onclick: (e) => { e.preventDefault(); openFile(f.path, f.line); } }, `${f.path}:${f.line}`)),
     f.description ? el("p", { class: "desc" }, f.description) : null,
-    rows.length ? el("div", { class: "table-wrap" }, el("table", {}, el("thead", {}, head), el("tbody", {}, rows))) : el("p", { class: "empty" }, "No examples yet."));
+    el("div", { class: "table-wrap" }, el("table", {}, el("thead", {}, head), el("tbody", {}, rows))),
+    note ? el("div", { class: "note note-" + note.kind },
+      el("p", {}, note.text),
+      ...(note.lines || []).map((l) => el("p", { class: "fail" }, l))) : null,
+    f.examples.length ? null : el("p", { class: "hint" }, "No rows yet. Type one and press Enter, or paste rows from a spreadsheet."));
+}
+
+const rowKey = (fn, ex) => fn + "(" + ex.inputs.join(",") + ")=" + ex.output;
+
+// editRow is the blank row at the bottom of a table (replace = ""), or an
+// existing row being edited (replace = its call). Typed text survives
+// re-renders as a draft until it's saved.
+function editRow(f, values, replace) {
+  const draftKey = f.qualified + "\0" + replace;
+  const draft = state.drafts[draftKey] || values;
+  const names = [...f.inputs, f.output];
+  const inputs = names.map((name, i) => el("input", { class: "cell", value: draft[i] ?? "", placeholder: name, "aria-label": `${name} for a ${replace ? "row being edited" : "new row"} of ${f.qualified}`, spellcheck: "false", autocomplete: "off" }));
+  const typed = () => inputs.map((i) => i.value);
+  const save = async () => {
+    const cells = typed();
+    if (!replace && cells.every((c) => !c.trim())) return;
+    const r = await call("putExample", f.qualified, JSON.stringify(cells), replace);
+    tableResult(f.qualified, r, draftKey);
+    if (r.status !== "error") { state.editing = null; renderFunctions(); focusRow(f.qualified, "tr.newrow"); }
+  };
+  for (const input of inputs) {
+    input.addEventListener("input", () => { state.drafts[draftKey] = typed(); });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); save(); }
+      if (e.key === "Escape") { delete state.drafts[draftKey]; state.editing = null; renderFunctions(); }
+    });
+    input.addEventListener("paste", (e) => {
+      const text = e.clipboardData?.getData("text/plain") || "";
+      if (!/[\t\n]/.test(text.trim())) return; // one value: an ordinary paste into the cell
+      e.preventDefault();
+      pasteRows(f.qualified, text);
+    });
+  }
+  return el("tr", { class: replace ? "editing" : "newrow" },
+    ...inputs.map((input, i) => el("td", { class: i === names.length - 1 ? "out" : "" }, input)),
+    el("td", {}, el("button", { type: "button", class: "x add", title: replace ? "Save this row (Enter)" : "Add this row (Enter)", onclick: save }, replace ? "✓" : "+")));
+}
+
+async function pasteRows(fn, text) {
+  const r = await call("pasteExamples", fn, text);
+  tableResult(fn, r, fn + "\0");
+  focusRow(fn, "tr.newrow");
+}
+
+// tableResult shows what a table edit did under that table.
+function tableResult(fn, r, draftKey) {
+  if (r.status === "error") state.note = { fn, kind: "error", text: r.message };
+  else {
+    delete state.drafts[draftKey];
+    state.note = { fn, kind: r.lines?.length ? "warn" : "ok", text: r.message, lines: (r.lines || []).map((l) => l.text) };
+  }
+  renderFunctions();
+}
+
+function focusRow(fn, which) {
+  document.querySelector(`article.fn[data-fn="${CSS.escape(fn)}"] ${which} input`)?.focus();
 }
 
 let shownCatalog = "";
@@ -415,6 +482,9 @@ function loadProject({ files, call: callText = "", active = "", sample = 0 }) {
   state.sample = sample === TOUR_SAMPLE || (Number.isInteger(sample) && sample < globalThis.PARK_SAMPLES.length) ? sample : -1;
   state.lastCall = callText;
   state.fresh = new Set();
+  state.editing = null;
+  state.drafts = {};
+  state.note = null;
   editor.reset();
   $("call").value = callText;
   $("result").hidden = true;
@@ -534,6 +604,9 @@ const POINTS = {
   addfile: () => document.querySelector(".tab.add"),
   share: () => $("share"),
 };
+const point = (name) => name.startsWith("function:")
+  ? document.querySelector(`article.fn[data-fn="${CSS.escape(name.slice(9))}"]`)
+  : POINTS[name]?.();
 
 const tours = () => globalThis.PARK_TOURS || [];
 const currentTour = () => state.tour && tours().find((t) => t.id === state.tour.id);
@@ -564,9 +637,11 @@ function enterStep(i, { check = true } = {}) {
   const step = currentStep();
   if (step.call) { $("call").value = step.call; }
   if (step.open) { const [file, line] = step.open.split(":"); openFile(file, Number(line) || 0); }
-  if (step.point?.includes("functions")) selectView("functions");
+  if (step.point?.some((p) => p === "functions" || p.startsWith("function:"))) selectView("functions");
   renderTour();
   renderPoints();
+  const first = step.point?.find((p) => p.startsWith("function:"));
+  if (first) point(first)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   save();
   if (check) tourCheck();
 }
@@ -598,7 +673,7 @@ function renderTour() {
 
 function renderPoints() {
   for (const node of document.querySelectorAll(".tour-point")) node.classList.remove("tour-point");
-  for (const name of currentStep()?.point || []) POINTS[name]?.()?.classList.add("tour-point");
+  for (const name of currentStep()?.point || []) point(name)?.classList.add("tour-point");
 }
 
 // tourCheck advances when the current step's goal holds. It runs after every
@@ -626,6 +701,7 @@ async function skipStep() {
     if (op.run) { state.lastCall = op.run; $("call").value = op.run; r = await call("run", op.run); showResult(r); }
     else if (op.addExample) r = await call("addExample", op.addExample);
     else if (op.dismiss) r = await call("dismiss", op.dismiss);
+    else if (op.paste) { selectView("functions"); r = await call("pasteExamples", op.paste.function, op.paste.text); }
     else if (op.setFile) { state.files[op.setFile.file] = op.setFile.text; state.active = op.setFile.file; r = await call("load"); }
     else if (op.replace) {
       const text = state.files[op.replace.file] ?? "";

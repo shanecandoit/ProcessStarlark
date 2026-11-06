@@ -42,6 +42,7 @@ type Goal struct {
 	Status   string `json:"status,omitempty"`   // The last run had this status.
 	Question string `json:"question,omitempty"` // This call is an open question.
 	Example  string `json:"example,omitempty"`  // Some function has an example for this call.
+	Function string `json:"function,omitempty"` // This Process.function is declared.
 	Not      *Goal  `json:"not,omitempty"`      // This goal does not hold.
 	All      []Goal `json:"all,omitempty"`      // Every goal holds.
 }
@@ -51,8 +52,15 @@ type TourOp struct {
 	Run        string       `json:"run,omitempty"`
 	AddExample string       `json:"addExample,omitempty"`
 	Dismiss    string       `json:"dismiss,omitempty"`
+	Paste      *Paste       `json:"paste,omitempty"`
 	SetFile    *FileText    `json:"setFile,omitempty"`
 	Replace    *Replacement `json:"replace,omitempty"`
+}
+
+// Paste pastes spreadsheet rows into a function's table.
+type Paste struct {
+	Function string `json:"function"`
+	Text     string `json:"text"`
 }
 
 type FileText struct {
@@ -97,6 +105,15 @@ func Met(files Files, last LastRun, g Goal) bool {
 			found = found || sameCall(files, q.Call, g.Question)
 		}
 		if !found {
+			return false
+		}
+	}
+	if g.Function != "" {
+		p, err := load(files)
+		if err != nil {
+			return false
+		}
+		if _, _, err := p.Function(g.Function); err != nil {
 			return false
 		}
 	}
@@ -155,6 +172,8 @@ func Apply(ctx context.Context, files Files, last LastRun, op TourOp) (Files, La
 		return check(AddExample(files, op.AddExample))
 	case op.Dismiss != "":
 		return check(Dismiss(files, op.Dismiss))
+	case op.Paste != nil:
+		return check(PasteExamples(ctx, files, op.Paste.Function, op.Paste.Text))
 	case op.SetFile != nil:
 		next := clone(files)
 		next[op.SetFile.File] = op.SetFile.Text

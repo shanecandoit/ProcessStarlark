@@ -175,8 +175,9 @@ order. None of it is built; the engine is.
 1. **Hosted playground** with the shipping sample first, as the thing to send
    people. (The Pages workflow publishes it; the sample is already first.)
 2. **A table editor for examples and questions,** so rule owners never see
-   source files. The playground's function tables and question panel are the
-   start of it.
+   source files. Started: playground tables are editable, and spreadsheet
+   rows can be pasted in (D21). Next: a view with only tables and questions,
+   and values shown without Starlark quotes.
 3. **Business-shaped values:** decimals and money, dates, and ranges or
    patterns in examples ("any parcel over 30 kg").
 4. **Overrides** (#2): negotiated prices and one-off exceptions are everyday
