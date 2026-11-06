@@ -420,3 +420,50 @@ func Archive(files Files) Result {
 	r.Archive = buf.Bytes()
 	return r
 }
+
+// Dismiss removes an open question without answering it, like deleting its
+// line from questions.txt. The call may be asked again later.
+func Dismiss(files Files, call string) Result {
+	p, err := load(files)
+	if err != nil {
+		return failure(files, err)
+	}
+	qualified, input, err := parseCall(p, call)
+	if err != nil {
+		return failure(files, err)
+	}
+	queued, _, err := project.ParseQuestions(p, []byte(files[project.QuestionsFile]))
+	if err != nil {
+		return failure(files, err)
+	}
+	key := samples.Key(input)
+	var kept []project.Question
+	for _, q := range queued {
+		if q.Function != qualified || samples.Key(q.Input) != key {
+			kept = append(kept, q)
+		}
+	}
+	if len(kept) == len(queued) {
+		return failure(files, fmt.Errorf("no open question for %s", call))
+	}
+	next := clone(files)
+	if b := project.FormatQuestions(kept); b == nil {
+		delete(next, project.QuestionsFile)
+	} else {
+		next[project.QuestionsFile] = string(b)
+	}
+	next, snap, err := publish(next, nil)
+	if err != nil {
+		return failure(files, err)
+	}
+	return Result{Status: OK, Message: "Dismissed " + call, Files: next, Snapshot: snap}
+}
+
+// parseCall parses a call written as text and binds it to a function.
+func parseCall(p *project.Project, call string) (string, map[string]any, error) {
+	parsed, err := source.ParseCall(call)
+	if err != nil {
+		return "", nil, err
+	}
+	return bind(p, parsed)
+}

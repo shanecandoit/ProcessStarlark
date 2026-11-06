@@ -16,7 +16,9 @@ comes up that neither covers, Park doesn't guess: it asks the people who own
 the rule, and their answer becomes a new example.
 
 **Try it in your browser: <https://shanecandoit.github.io/ProcessStarlark/>**, with nothing to install. The shipping
-sample walks through a question and its answer.
+sample walks through a question and its answer, and a [two-minute guided
+tour](https://shanecandoit.github.io/ProcessStarlark/#tour=shipping) plays it
+as the two people involved.
 
 - **For business teams and buyers:** [Park for business teams](docs/for-business.md)
   walks through a shipping-quote example and compares Park with specs,

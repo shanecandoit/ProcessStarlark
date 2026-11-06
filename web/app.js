@@ -6,6 +6,9 @@
 const QUESTIONS = "questions.txt";
 const STORAGE_KEY = "park-playground-v1";
 const SHARE_PREFIX = "#p=";
+const TOUR_KEY = "park-tour-v1";   // a tour in progress, kept apart from the reader's own project
+const TOUR_PREFIX = "#tour=";      // #tour=shipping or #tour=shipping/4 (1-based step)
+const TOUR_SAMPLE = -2;            // state.sample while touring
 const $ = (id) => document.getElementById(id);
 
 const state = {
@@ -16,6 +19,7 @@ const state = {
   fresh: new Set(),   // example keys added by the last edit, highlighted
   view: "functions",
   sample: 0,          // sample the project started from; -1 for a shared link
+  tour: null,         // {id, step, last: {call, status, output}} while a tour runs
 };
 
 function el(tag, props = {}, ...children) {
@@ -97,6 +101,7 @@ async function execute(op, args) {
       state.files = result.files;
     }
     if (result.snapshot) state.snapshot = result.snapshot;
+    if (op === "run" && state.tour) state.tour.last = { call: args[0], status: result.status, output: result.output || "" };
     if (op === "addExample") {
       const after = exampleKeys(state.snapshot);
       state.fresh = new Set([...after].filter((k) => !before.has(k)));
@@ -105,6 +110,7 @@ async function execute(op, args) {
     }
     render();
     save();
+    if (state.tour && op !== "archive") setTimeout(tourCheck);
     return result;
   } catch (err) {
     return { status: "error", message: err.message === "stopped" ? "Stopped. The call took too long, so Park restarted." : String(err) };
@@ -214,6 +220,7 @@ function render() {
   renderFunctions();
   renderCatalog();
   renderSample();
+  renderPoints();
 }
 
 function modules() {
@@ -262,6 +269,7 @@ function question(q) {
   return el("li", { class: q.hasProposal ? "proposal" : "" },
     el("code", {}, q.call), el("span", { class: "eq" }, "=="), value,
     el("button", { type: "button", onclick: submit }, q.hasProposal ? "Confirm" : "Answer"),
+    el("button", { type: "button", class: "quiet", title: "Remove this question without answering it", onclick: () => dismiss(q.call) }, "Dismiss"),
     q.hasProposal ? el("span", { class: "hint" }, "proposed by unconfirmed code; edit it if it's wrong") : null,
   );
 }
@@ -368,6 +376,12 @@ async function answer(line) {
   else showResult(r);
 }
 
+async function dismiss(callText) {
+  const r = await call("dismiss", callText);
+  if (r.status !== "ok") showResult(r);
+  else toast(r.message + ".");
+}
+
 function openFile(name, line) {
   if (!(name in state.files)) return;
   state.active = name;
@@ -398,7 +412,7 @@ function edited() {
 function loadProject({ files, call: callText = "", active = "", sample = 0 }) {
   state.files = { ...files };
   state.active = active in files ? active : Object.keys(files).filter((n) => n.endsWith(".star")).sort()[0] || "";
-  state.sample = Number.isInteger(sample) && sample < globalThis.PARK_SAMPLES.length ? sample : -1;
+  state.sample = sample === TOUR_SAMPLE || (Number.isInteger(sample) && sample < globalThis.PARK_SAMPLES.length) ? sample : -1;
   state.lastCall = callText;
   state.fresh = new Set();
   editor.reset();
@@ -409,6 +423,7 @@ function loadProject({ files, call: callText = "", active = "", sample = 0 }) {
 }
 
 function loadSample(i) {
+  endTour();
   const s = globalThis.PARK_SAMPLES[i];
   return loadProject({ files: s.files, call: s.call, sample: i });
 }
@@ -435,12 +450,13 @@ function saved() {
 // loses the last edit when the page reloads right after it.
 function save() {
   if (!state.active && !Object.keys(state.files).length) return; // nothing loaded yet
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(saved())); } catch { /* storage may be unavailable */ }
+  const [key, data] = state.tour ? [TOUR_KEY, { tour: state.tour, project: saved() }] : [STORAGE_KEY, saved()];
+  try { localStorage.setItem(key, JSON.stringify(data)); } catch { /* storage may be unavailable */ }
 }
 
-function restore() {
+function restore(key = STORAGE_KEY) {
   try {
-    const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+    const data = JSON.parse(localStorage.getItem(key) || "null");
     if (data && data.files && typeof data.files === "object") return data;
   } catch { /* ignore unreadable storage */ }
   return null;
@@ -500,6 +516,185 @@ async function download() {
 }
 const fromBase64 = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 
+// ---- Guided tours ---------------------------------------------------------
+// Tours are data (web/tours/*.json, bundled as tours.js with a checkpoint per
+// step). The build replays each tour through the engine, so every step here
+// can be completed. See docs/plan-guided-tours.md.
+
+const ROLES = { ops: "Ops", dev: "Developer" };
+// Places a step can point at, by name, so tours don't depend on page layout.
+const POINTS = {
+  run: () => document.querySelector("#runform button[type=submit]"),
+  call: () => $("call"),
+  result: () => $("result"),
+  why: () => $("why"),
+  questions: () => $("questions"),
+  functions: () => $("view-functions"),
+  editor: () => document.querySelector(".CodeMirror") || $("editor"),
+  addfile: () => document.querySelector(".tab.add"),
+  share: () => $("share"),
+};
+
+const tours = () => globalThis.PARK_TOURS || [];
+const currentTour = () => state.tour && tours().find((t) => t.id === state.tour.id);
+const currentStep = () => currentTour()?.steps[state.tour.step];
+
+// startTour opens a tour at a step (0-based), loading that step's checkpoint.
+async function startTour(id, step = 0) {
+  const tour = tours().find((t) => t.id === id);
+  if (!tour) return false;
+  step = Math.max(0, Math.min(step, tour.steps.length - 1));
+  save(); // the reader's own project stays in its own slot
+  state.tour = { id, step, last: {} };
+  await loadCheckpoint(tour.steps[step]);
+  enterStep(step);
+  return true;
+}
+
+async function loadCheckpoint(step) {
+  await loadProject({ files: step.checkpoint, call: step.checkpointCall || "", sample: TOUR_SAMPLE });
+  if (step.checkpointCall) { state.lastCall = step.checkpointCall; showResult(await call("run", step.checkpointCall)); }
+}
+
+let tourTimer = 0;
+function enterStep(i, { check = true } = {}) {
+  clearTimeout(tourTimer);
+  tourTimer = 0;
+  state.tour.step = i;
+  const step = currentStep();
+  if (step.call) { $("call").value = step.call; }
+  if (step.open) { const [file, line] = step.open.split(":"); openFile(file, Number(line) || 0); }
+  if (step.point?.includes("functions")) selectView("functions");
+  renderTour();
+  renderPoints();
+  save();
+  if (check) tourCheck();
+}
+
+function renderTour() {
+  const panel = $("tour");
+  const tour = currentTour();
+  panel.hidden = !tour;
+  $("tourbtn").hidden = Boolean(tour);
+  document.body.classList.toggle("touring", Boolean(tour));
+  if (!tour) return;
+  const i = state.tour.step;
+  const step = tour.steps[i];
+  const last = i === tour.steps.length - 1;
+  $("tourtitle").textContent = tour.title;
+  $("tourcount").textContent = `${i + 1} of ${tour.steps.length}`;
+  $("tourrole").textContent = ROLES[step.role] || "";
+  $("tourrole").hidden = !step.role;
+  $("tourrole").className = "role role-" + (step.role || "none");
+  $("tourtext").textContent = step.text;
+  $("toursnippet").hidden = !step.snippet;
+  $("toursnippet").querySelector("pre").textContent = step.snippet || "";
+  $("tourdone").hidden = true;
+  $("tourback").disabled = i === 0;
+  $("tourskip").hidden = !step.skip?.length;
+  $("tournext").hidden = Boolean(step.goal) && !last;
+  $("tournext").textContent = last ? "Finish" : "Next";
+}
+
+function renderPoints() {
+  for (const node of document.querySelectorAll(".tour-point")) node.classList.remove("tour-point");
+  for (const name of currentStep()?.point || []) POINTS[name]?.()?.classList.add("tour-point");
+}
+
+// tourCheck advances when the current step's goal holds. It runs after every
+// engine operation; the goal is checked by the same Go code the build uses.
+async function tourCheck() {
+  const step = currentStep();
+  if (!step?.goal || tourTimer) return;
+  const at = state.tour.step;
+  const r = await engine.call("goal", state.files, [JSON.stringify(state.tour.last), JSON.stringify(step.goal)]).catch(() => null);
+  if (!r?.met || !state.tour || state.tour.step !== at) return;
+  $("tourdone").hidden = false;
+  tourTimer = setTimeout(() => { tourTimer = 0; if (state.tour?.step === at) enterStep(at + 1); }, 1400);
+}
+
+// skipStep does the step for the reader. If the reader's project has moved
+// away from the tour (an edit can't apply, or the goal still doesn't hold),
+// it loads the next step's checkpoint instead.
+async function skipStep() {
+  const tour = currentTour();
+  const at = state.tour.step;
+  const step = tour.steps[at];
+  let ok = true;
+  for (const op of step.skip || []) {
+    let r;
+    if (op.run) { state.lastCall = op.run; $("call").value = op.run; r = await call("run", op.run); showResult(r); }
+    else if (op.addExample) r = await call("addExample", op.addExample);
+    else if (op.dismiss) r = await call("dismiss", op.dismiss);
+    else if (op.setFile) { state.files[op.setFile.file] = op.setFile.text; state.active = op.setFile.file; r = await call("load"); }
+    else if (op.replace) {
+      const text = state.files[op.replace.file] ?? "";
+      if (text.split(op.replace.find).length !== 2) { ok = false; break; }
+      state.files[op.replace.file] = text.replace(op.replace.find, op.replace.with);
+      state.active = op.replace.file;
+      r = await call("load");
+    }
+    if (!r || r.status === "error") { ok = false; break; }
+  }
+  if (ok) {
+    const r = await engine.call("goal", state.files, [JSON.stringify(state.tour.last), JSON.stringify(step.goal)]).catch(() => null);
+    ok = Boolean(r?.met);
+  }
+  if (!ok && at + 1 < tour.steps.length) {
+    await loadCheckpoint(tour.steps[at + 1]);
+    toast("Your project had moved on from the tour, so it was reset to this point.");
+  }
+  if (state.tour?.step === at) { clearTimeout(tourTimer); tourTimer = 0; enterStep(at + 1, { check: false }); }
+}
+
+function nextStep() {
+  const tour = currentTour();
+  if (state.tour.step + 1 < tour.steps.length) enterStep(state.tour.step + 1);
+  else finishTour();
+}
+
+// finishTour keeps the tour's project as the reader's own.
+function finishTour() {
+  endTour();
+  state.sample = -1;
+  save();
+  render();
+  toast("Tour finished. This project is yours now; Reset or pick a sample to start over.");
+}
+
+// exitTour returns to the project the reader had before the tour.
+async function exitTour() {
+  endTour();
+  const own = restore();
+  if (own && Object.keys(own.files).some((n) => n.endsWith(".star"))) await loadProject(own);
+  else await loadSample(0);
+}
+
+function endTour() {
+  if (!state.tour) return;
+  state.tour = null;
+  clearTimeout(tourTimer);
+  tourTimer = 0;
+  try { localStorage.removeItem(TOUR_KEY); } catch { /* ignore */ }
+  renderTour();
+  renderPoints();
+}
+
+function readTourHash() {
+  const hash = window.location.hash;
+  if (!hash.startsWith(TOUR_PREFIX)) return null;
+  const [id, step] = decodeURIComponent(hash.slice(TOUR_PREFIX.length)).split("/");
+  return { id, step: Math.max(0, (Number(step) || 1) - 1) };
+}
+
+function savedTour() {
+  try {
+    const data = JSON.parse(localStorage.getItem(TOUR_KEY) || "null");
+    if (data?.tour && data.project?.files && tours().some((t) => t.id === data.tour.id)) return data;
+  } catch { /* ignore unreadable storage */ }
+  return null;
+}
+
 // ---- Startup --------------------------------------------------------------
 
 async function start() {
@@ -517,6 +712,21 @@ async function start() {
   $("call").addEventListener("input", save);
   editor.onEdit(edited);
   $("test").addEventListener("click", runTests);
+  picker.append(el("option", { value: String(TOUR_SAMPLE), disabled: true }, "Guided tour"));
+  $("tourbtn").addEventListener("click", () => startTour(tours()[0]?.id));
+  $("tourback").addEventListener("click", () => enterStep(state.tour.step - 1, { check: false }));
+  $("tournext").addEventListener("click", nextStep);
+  $("tourskip").addEventListener("click", skipStep);
+  $("tourexit").addEventListener("click", exitTour);
+  $("tourcopy").addEventListener("click", () => navigator.clipboard.writeText(currentStep()?.snippet || "").then(() => toast("Copied."), () => toast("Couldn't copy; select the text instead.")));
+  $("tourbtn").hidden = !tours().length;
+  // A tour link opened while the page is already open only changes the hash.
+  window.addEventListener("hashchange", () => {
+    const link = readTourHash();
+    if (!link) return;
+    history.replaceState(null, "", baseURL());
+    startTour(link.id, link.step);
+  });
   for (const tab of document.querySelectorAll(".tab[data-view]")) tab.addEventListener("click", () => selectView(tab.dataset.view));
 
   try {
@@ -525,16 +735,28 @@ async function start() {
     $("loading").textContent = "Couldn't load park.wasm: " + err.message;
     return;
   }
+  // Opening order: a share link, a tour link, a tour in progress, the saved
+  // project, and on a first visit, the tour.
   let project = null;
   try {
     project = await readShared();
   } catch (err) {
     toast("Couldn't open the shared link: " + err.message);
   }
-  if (project) history.replaceState(null, "", baseURL()); // saved locally from here on
-  project ||= restore();
-  if (project && Object.keys(project.files).some((n) => n.endsWith(".star"))) await loadProject(project);
-  else await loadSample(0);
+  const tourLink = readTourHash();
+  if (project || tourLink) history.replaceState(null, "", baseURL()); // saved locally from here on
+  const inTour = savedTour();
+  const own = restore();
+  const hasFiles = (p) => p && Object.keys(p.files).some((n) => n.endsWith(".star"));
+  if (hasFiles(project)) await loadProject(project);
+  else if (tourLink && await startTour(tourLink.id, tourLink.step)) { /* started */ }
+  else if (inTour) {
+    state.tour = inTour.tour;
+    await loadProject({ ...inTour.project, sample: TOUR_SAMPLE });
+    enterStep(state.tour.step, { check: false });
+  }
+  else if (hasFiles(own)) await loadProject(own);
+  else if (!(tours().length && await startTour(tours()[0].id))) await loadSample(0);
   $("loading").hidden = true;
 }
 

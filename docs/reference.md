@@ -282,6 +282,10 @@ and the catalog follow the rules on this page. The differences:
 - The project lives in the browser: saved locally, and shareable as a link
   that holds every file.
 - There's no `.cache/`; every call is computed fresh.
+- A guided tour (**Tour**, or a `#tour=shipping` link) walks through the
+  shipping sample as Ops and as a developer. It opens on a first visit.
+- Questions can be dismissed without answering, which is like deleting the
+  line from `questions.txt`.
 - Every run shows "Why this answer", the same tree as `park run --why`.
   Each location opens that line in the editor.
 - Questions appear in a panel. Answering one adds the example, exactly like

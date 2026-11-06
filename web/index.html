@@ -15,6 +15,7 @@
     <select id="sample"></select>
   </label>
   <div class="actions">
+    <button id="tourbtn" type="button" class="quiet" title="A two-minute guided tour">Tour</button>
     <button id="share" type="button" class="quiet" title="Copy a link that holds this whole project">Share</button>
     <button id="download" type="button" class="quiet" title="Download the project as a zip the park CLI can open">Download</button>
     <button id="reset" type="button" class="quiet" title="Restore the sample's original files">Reset</button>
@@ -29,6 +30,25 @@
   </section>
 
   <section class="pane work" aria-label="Run and answer">
+    <section id="tour" class="tourpanel" hidden aria-live="polite" aria-label="Guided tour">
+      <div class="tourhead">
+        <span id="tourrole" class="role"></span>
+        <strong id="tourtitle"></strong>
+        <span id="tourcount" class="count"></span>
+      </div>
+      <p id="tourtext"></p>
+      <div id="toursnippet" class="snippet" hidden>
+        <pre></pre>
+        <button type="button" class="quiet" id="tourcopy">Copy</button>
+      </div>
+      <p id="tourdone" class="tourdone" hidden>Done!</p>
+      <div class="tourbuttons">
+        <button type="button" class="quiet" id="tourback">Back</button>
+        <button type="button" class="quiet" id="tourskip" title="Do this step for me">Do it for me</button>
+        <button type="button" id="tournext">Next</button>
+        <button type="button" class="quiet" id="tourexit">Exit tour</button>
+      </div>
+    </section>
     <form id="runform" class="runbox">
       <label for="call">Call</label>
       <input id="call" spellcheck="false" autocomplete="off" placeholder='RomanParse.parse("xiv")'>
@@ -68,6 +88,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
 <script src="samples.js"></script>
+<script src="tours.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

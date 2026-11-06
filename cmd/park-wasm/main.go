@@ -46,6 +46,24 @@ func arg(args []string, i int) string {
 	return ""
 }
 
+// goal(files, lastRun, goal) reports whether a tour step's goal holds, as
+// the JSON string {"met": bool}.
+func goal(_ js.Value, args []js.Value) any {
+	var files workspace.Files
+	var last workspace.LastRun
+	var g workspace.Goal
+	if len(args) < 3 ||
+		json.Unmarshal([]byte(args[0].String()), &files) != nil ||
+		json.Unmarshal([]byte(args[1].String()), &last) != nil ||
+		json.Unmarshal([]byte(args[2].String()), &g) != nil {
+		return `{"met":false,"message":"goal: bad arguments"}`
+	}
+	if workspace.Met(files, last, g) {
+		return `{"met":true}`
+	}
+	return `{"met":false}`
+}
+
 func main() {
 	ctx := context.Background()
 	api := js.Global().Get("Object").New()
@@ -54,6 +72,8 @@ func main() {
 	api.Set("test", bridge(func(f workspace.Files, a []string) workspace.Result { return workspace.Test(ctx, f, arg(a, 0)) }))
 	api.Set("addExample", bridge(func(f workspace.Files, a []string) workspace.Result { return workspace.AddExample(f, arg(a, 0)) }))
 	api.Set("removeExample", bridge(func(f workspace.Files, a []string) workspace.Result { return workspace.RemoveExample(f, arg(a, 0)) }))
+	api.Set("dismiss", bridge(func(f workspace.Files, a []string) workspace.Result { return workspace.Dismiss(f, arg(a, 0)) }))
+	api.Set("goal", js.FuncOf(goal))
 	api.Set("archive", bridge(func(f workspace.Files, _ []string) workspace.Result { return workspace.Archive(f) }))
 	js.Global().Set("park", api)
 	if ready := js.Global().Get("onParkReady"); ready.Type() == js.TypeFunction {

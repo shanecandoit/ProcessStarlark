@@ -4,11 +4,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/shanecandoit/ProcessStarlark/internal/workspace"
 )
 
 // Sample projects shown in the playground's picker, in order.
@@ -39,27 +42,20 @@ func build() error {
 	}
 	var samples []sample
 	for _, p := range projects {
-		s := sample{Name: p.Name, Call: p.Call, Files: map[string]string{}}
-		entries, err := os.ReadDir(p.Dir)
+		files, err := readProject(p.Dir)
 		if err != nil {
 			return err
 		}
-		for _, e := range entries {
-			if strings.HasSuffix(e.Name(), ".star") {
-				b, err := os.ReadFile(filepath.Join(p.Dir, e.Name()))
-				if err != nil {
-					return err
-				}
-				s.Files[e.Name()] = string(b)
-			}
-		}
-		samples = append(samples, s)
+		samples = append(samples, sample{Name: p.Name, Call: p.Call, Files: files})
 	}
 	b, err := json.Marshal(samples)
 	if err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(dist, "samples.js"), []byte("globalThis.PARK_SAMPLES = "+string(b)+";\n"), 0644); err != nil {
+		return err
+	}
+	if err := buildTours(dist); err != nil {
 		return err
 	}
 	copies := map[string]string{
@@ -78,4 +74,57 @@ func build() error {
 		}
 	}
 	return nil
+}
+
+func readProject(dir string) (map[string]string, error) {
+	files := map[string]string{}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".star") {
+			b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+			if err != nil {
+				return nil, err
+			}
+			files[e.Name()] = string(b)
+		}
+	}
+	return files, nil
+}
+
+// buildTours replays every tour in web/tours through the engine, so a tour
+// that can no longer be completed fails the build, and writes them with their
+// checkpoints to tours.js.
+func buildTours(dist string) error {
+	paths, err := filepath.Glob(filepath.Join("web", "tours", "*.json"))
+	if err != nil {
+		return err
+	}
+	tours := []workspace.Tour{}
+	for _, path := range paths {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var t workspace.Tour
+		if err := json.Unmarshal(b, &t); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		files, err := readProject(t.Start)
+		if err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		t.Files = files
+		if err := workspace.Prepare(context.Background(), &t); err != nil {
+			return err
+		}
+		tours = append(tours, t)
+	}
+	b, err := json.Marshal(tours)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dist, "tours.js"), []byte("globalThis.PARK_TOURS = "+string(b)+";\n"), 0644)
 }

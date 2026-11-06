@@ -1,0 +1,179 @@
+{
+  "id": "shipping",
+  "title": "Two people, one function",
+  "start": "examples/shipping",
+  "steps": [
+    {
+      "text": "This project quotes shipping prices. Ops keeps the zone table in zones.star: just answers, no code. A developer wrote the pricing rule in shipping.star. Every function here is shown as a table of its examples.",
+      "open": "zones.star",
+      "point": [
+        "functions",
+        "editor"
+      ]
+    },
+    {
+      "role": "ops",
+      "text": "A customer wants to ship 800 g to Germany. Press Run to get a quote.",
+      "call": "Shipping.quote(\"DE\", 800)",
+      "point": [
+        "run"
+      ],
+      "goal": {
+        "question": "Zones.zone(\"DE\")"
+      },
+      "skip": [
+        {
+          "run": "Shipping.quote(\"DE\", 800)"
+        }
+      ]
+    },
+    {
+      "role": "ops",
+      "text": "Germany isn't in your zone table, so Park asks you instead of guessing. Answer the question with \"international\" (keep the quotes).",
+      "point": [
+        "questions"
+      ],
+      "goal": {
+        "all": [
+          {
+            "example": "Zones.zone(\"DE\")",
+            "output": "\"international\""
+          },
+          {
+            "ran": "Shipping.quote(\"DE\", 800)",
+            "output": "2799"
+          }
+        ]
+      },
+      "skip": [
+        {
+          "addExample": "Zones.zone(\"DE\") == \"international\""
+        },
+        {
+          "run": "Shipping.quote(\"DE\", 800)"
+        }
+      ]
+    },
+    {
+      "text": "Your answer became a new row in the zone table, and the quote resumed: 2799 cents. \"Why this answer\" shows where it came from: the developer's rule, using your row for Germany. Click a location to see it.",
+      "point": [
+        "why"
+      ]
+    },
+    {
+      "role": "ops",
+      "text": "Customers don't type country codes. They type \"usa\" or \"germany\". Add a file with + file, name it region_alias, and replace its contents with this table.",
+      "snippet": "Process RegionAlias:\n    \"\"\"What customers type, mapped to a country code. Ops keeps this table.\"\"\"\n\n    example: known(\"us\") == \"US\"\n    example: known(\"usa\") == \"US\"\n    example: known(\"america\") == \"US\"\n    example: known(\"ca\") == \"CA\"\n    example: known(\"fr\") == \"FR\"\n    example: known(\"de\") == \"DE\"\n    example: known(\"germany\") == \"DE\"\n\n    def known(name):\n        pass\n",
+      "point": [
+        "addfile",
+        "editor"
+      ],
+      "goal": {
+        "example": "RegionAlias.known(\"usa\")"
+      },
+      "skip": [
+        {
+          "setFile": {
+            "file": "region_alias.star",
+            "text": "Process RegionAlias:\n    \"\"\"What customers type, mapped to a country code. Ops keeps this table.\"\"\"\n\n    example: known(\"us\") == \"US\"\n    example: known(\"usa\") == \"US\"\n    example: known(\"america\") == \"US\"\n    example: known(\"ca\") == \"CA\"\n    example: known(\"fr\") == \"FR\"\n    example: known(\"de\") == \"DE\"\n    example: known(\"germany\") == \"DE\"\n\n    def known(name):\n        pass\n"
+          }
+        }
+      ]
+    },
+    {
+      "role": "ops",
+      "text": "Now try it the way a customer might type it: with capitals. Press Run.",
+      "call": "RegionAlias.known(\"USA\")",
+      "point": [
+        "run"
+      ],
+      "goal": {
+        "question": "RegionAlias.known(\"USA\")"
+      },
+      "skip": [
+        {
+          "run": "RegionAlias.known(\"USA\")"
+        }
+      ]
+    },
+    {
+      "role": "ops",
+      "text": "Park only knows exactly what's written, so \"USA\" is a new question. Don't answer it: you'd need a row for every way of capitalizing every name. That's a rule, not a fact, so it's the developer's job. Dismiss the question.",
+      "point": [
+        "questions"
+      ],
+      "goal": {
+        "not": {
+          "question": "RegionAlias.known(\"USA\")"
+        }
+      },
+      "skip": [
+        {
+          "dismiss": "RegionAlias.known(\"USA\")"
+        }
+      ]
+    },
+    {
+      "role": "dev",
+      "text": "Write the rule: a function code(name) that ignores capitals and spaces, then looks the name up in Ops' table. Add this below known in region_alias.star. Its two examples confirm the code. Then run it on a spelling nobody listed.",
+      "snippet": "    example: code(\"USA\") == \"US\"\n    example: code(\" Germany \") == \"DE\"\n\n    def code(name):\n        \"\"\"Ignores capitals and spaces, then looks the name up in Ops' table.\"\"\"\n        key = name.strip().lower()\n        country = known(key)\n        return country\n",
+      "call": "RegionAlias.code(\"Usa\")",
+      "open": "region_alias.star:13",
+      "point": [
+        "editor",
+        "run"
+      ],
+      "goal": {
+        "ran": "RegionAlias.code(\"Usa\")",
+        "status": "ok",
+        "output": "\"US\""
+      },
+      "skip": [
+        {
+          "replace": {
+            "file": "region_alias.star",
+            "find": "    def known(name):\n        pass\n",
+            "with": "    def known(name):\n        pass\n\n    example: code(\"USA\") == \"US\"\n    example: code(\" Germany \") == \"DE\"\n\n    def code(name):\n        \"\"\"Ignores capitals and spaces, then looks the name up in Ops' table.\"\"\"\n        key = name.strip().lower()\n        country = known(key)\n        return country\n"
+          }
+        },
+        {
+          "run": "RegionAlias.code(\"Usa\")"
+        }
+      ]
+    },
+    {
+      "role": "dev",
+      "text": "Last, use it in the quote. In shipping.star, change Zones.zone(country) to Zones.zone(RegionAlias.code(country)). Then quote \"Germany\", spelled the way a customer would.",
+      "open": "shipping.star:12",
+      "call": "Shipping.quote(\"Germany\", 800)",
+      "point": [
+        "editor",
+        "run"
+      ],
+      "goal": {
+        "ran": "Shipping.quote(\"Germany\", 800)",
+        "status": "ok",
+        "output": "2799"
+      },
+      "skip": [
+        {
+          "replace": {
+            "file": "shipping.star",
+            "find": "Zones.zone(country)",
+            "with": "Zones.zone(RegionAlias.code(country))"
+          }
+        },
+        {
+          "run": "Shipping.quote(\"Germany\", 800)"
+        }
+      ]
+    },
+    {
+      "text": "One answer, two people's work. \"Why this answer\" shows the developer's pricing rule and alias rule, and Ops' alias table and zone table, each linked to where it's written. Ops never wrote code, and the developer never had to know which zone Germany is in. Keep exploring, or share this project.",
+      "point": [
+        "why",
+        "share"
+      ]
+    }
+  ]
+}
