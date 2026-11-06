@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/signal"
 
-	"park/internal/cli"
+	"github.com/shanecandoit/ProcessStarlark/internal/cli"
 )
 
 func main() {

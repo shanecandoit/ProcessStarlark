@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"park/internal/samples"
+	"github.com/shanecandoit/ProcessStarlark/internal/samples"
 )
 
 func AtomicWrite(root, rel string, b []byte) error {

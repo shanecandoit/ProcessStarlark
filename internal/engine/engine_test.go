@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shanecandoit/ProcessStarlark/internal/project"
+	"github.com/shanecandoit/ProcessStarlark/internal/samples"
 	"go.starlark.net/starlark"
-	"park/internal/project"
-	"park/internal/samples"
 )
 
 const mathModule = `Process Math:

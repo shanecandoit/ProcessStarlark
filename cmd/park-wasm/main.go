@@ -11,7 +11,7 @@ import (
 	"encoding/json"
 	"syscall/js"
 
-	"park/internal/workspace"
+	"github.com/shanecandoit/ProcessStarlark/internal/workspace"
 )
 
 type op func(files workspace.Files, args []string) workspace.Result

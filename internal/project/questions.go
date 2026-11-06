@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"park/internal/samples"
-	"park/internal/source"
+	"github.com/shanecandoit/ProcessStarlark/internal/samples"
+	"github.com/shanecandoit/ProcessStarlark/internal/source"
 )
 
 // QuestionsFile holds calls Park could not answer. Each one waits for the user

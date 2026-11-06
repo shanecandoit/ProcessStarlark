@@ -10,11 +10,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"park/internal/catalog"
-	"park/internal/engine"
-	"park/internal/project"
-	"park/internal/samples"
-	"park/internal/source"
+	"github.com/shanecandoit/ProcessStarlark/internal/catalog"
+	"github.com/shanecandoit/ProcessStarlark/internal/engine"
+	"github.com/shanecandoit/ProcessStarlark/internal/project"
+	"github.com/shanecandoit/ProcessStarlark/internal/samples"
+	"github.com/shanecandoit/ProcessStarlark/internal/source"
 )
 
 const usage = `park — example-driven Starlark functions

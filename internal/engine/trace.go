@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	"park/internal/samples"
+	"github.com/shanecandoit/ProcessStarlark/internal/samples"
 )
 
 // Where an answer came from.

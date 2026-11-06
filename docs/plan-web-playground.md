@@ -127,8 +127,10 @@ tests. `cmd/park-wasm` is a thin `syscall/js` bridge over it.
   original call reruns automatically (ideas #5). A first cut exists: answering
   any question reruns the last call. Next: show the chain of questions one
   call raises, and answer them in order.
-- **Guided tour:** the README's Roman numeral story as steps a reader clicks
-  through.
+- **Guided tours:** planned in [plan-guided-tours.md](plan-guided-tours.md).
+  Tours are data (JSON steps with goals and skips), checked at build time by
+  replaying them through the engine. The first tour is the shipping story with
+  two roles, Ops and the developer.
 - **Function tables:** done early, in phase 1. Each function is a table with
   inputs as columns and the output last; rows added by an answer are
   highlighted, and each row can be removed.

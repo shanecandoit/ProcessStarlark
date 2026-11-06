@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"park/internal/project"
+	"github.com/shanecandoit/ProcessStarlark/internal/project"
 )
 
 func write(t *testing.T, root, path, contents string) {

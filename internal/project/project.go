@@ -13,9 +13,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/shanecandoit/ProcessStarlark/internal/samples"
+	"github.com/shanecandoit/ProcessStarlark/internal/source"
 	"go.starlark.net/syntax"
-	"park/internal/samples"
-	"park/internal/source"
 )
 
 const MaxFileBytes = 2 << 20

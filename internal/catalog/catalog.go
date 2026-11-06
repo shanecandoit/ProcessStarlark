@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"html/template"
 
-	"park/internal/project"
-	"park/internal/samples"
+	"github.com/shanecandoit/ProcessStarlark/internal/project"
+	"github.com/shanecandoit/ProcessStarlark/internal/samples"
 )
 
 const MaxBytes = 32 << 20

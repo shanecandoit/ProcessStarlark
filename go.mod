@@ -1,4 +1,4 @@
-module park
+module github.com/shanecandoit/ProcessStarlark
 
 go 1.26.0
 

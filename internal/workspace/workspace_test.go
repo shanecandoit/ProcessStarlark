@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"park/internal/cli"
+	"github.com/shanecandoit/ProcessStarlark/internal/cli"
 )
 
 func readDir(t *testing.T, dir string) Files {

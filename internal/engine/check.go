@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"park/internal/project"
-	"park/internal/samples"
+	"github.com/shanecandoit/ProcessStarlark/internal/project"
+	"github.com/shanecandoit/ProcessStarlark/internal/samples"
 )
 
 // Timeout bounds each top-level evaluation and each test example.

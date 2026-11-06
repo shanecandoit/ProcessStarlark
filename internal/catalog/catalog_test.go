@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"park/internal/project"
+	"github.com/shanecandoit/ProcessStarlark/internal/project"
 )
 
 func TestSelectionAndEscaping(t *testing.T) {

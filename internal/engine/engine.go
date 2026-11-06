@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/shanecandoit/ProcessStarlark/internal/project"
+	"github.com/shanecandoit/ProcessStarlark/internal/samples"
+	"github.com/shanecandoit/ProcessStarlark/internal/source"
 	"go.starlark.net/resolve"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
 	"go.starlark.net/syntax"
-	"park/internal/project"
-	"park/internal/samples"
-	"park/internal/source"
 )
 
 const MaxSteps = 1_000_000

@@ -8,8 +8,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/shanecandoit/ProcessStarlark/internal/samples"
 	"go.starlark.net/syntax"
-	"park/internal/samples"
 )
 
 var header = regexp.MustCompile(`^Process[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*:[ \t]*(#.*)?\r?$`)

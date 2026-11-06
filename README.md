@@ -103,8 +103,14 @@ Now `xiv` gives `14`. Your examples are still in charge:
 
 ## Try it
 
-You need [Go](https://go.dev/dl/) 1.26 or newer, on macOS or Linux. In this
-folder, run:
+You need [Go](https://go.dev/dl/) 1.26 or newer, on macOS or Linux. To install
+just the CLI:
+
+```sh
+go install github.com/shanecandoit/ProcessStarlark/cmd/park@latest
+```
+
+Or, in a clone of this repository, run:
 
 ```sh
 go build -o park ./cmd/park
@@ -139,7 +145,8 @@ before the command.
   geometry, each runnable from [`examples/`](examples).
 - [Implementation plan](plan.md): the full contract.
 - [Browser playground](docs/plan-web-playground.md): how the playground is
-  built, and what's next for it.
+  built, and what's next for it. [Guided tours](docs/plan-guided-tours.md) are
+  planned next.
 - [Direction](docs/ideas-direction.md): where Park goes next.
 
 **Status:** early. The command-line tool and the browser playground work end to
