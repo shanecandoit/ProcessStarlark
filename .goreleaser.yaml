@@ -1,0 +1,41 @@
+# GoReleaser config for the park CLI. Run by .github/workflows/release.yml.
+# Check locally with: goreleaser check && goreleaser release --snapshot --clean
+version: 2
+
+project_name: park
+
+builds:
+  - id: park
+    main: ./cmd/park
+    binary: park
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+
+archives:
+  - id: park
+    # No version in the name, so /releases/latest/download/<name> links stay
+    # stable across releases.
+    name_template: >-
+      {{ .ProjectName }}_{{ title .Os }}_{{ if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"

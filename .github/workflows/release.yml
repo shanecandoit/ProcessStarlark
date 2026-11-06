@@ -1,0 +1,49 @@
+# Publishes a GitHub Release when a version tag is pushed:
+#
+#   git tag v0.1.0
+#   git push origin v0.1.0
+#
+# GoReleaser builds the park CLI for macOS, Linux and Windows and attaches the
+# archives and checksums (see .goreleaser.yaml). The playground is attached
+# too, as park-playground.zip, for running offline.
+#
+# Stable download links, always the newest release:
+#   https://github.com/shanecandoit/ProcessStarlark/releases/latest
+#   https://github.com/shanecandoit/ProcessStarlark/releases/latest/download/park_Darwin_arm64.tar.gz
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # GoReleaser builds the changelog from history.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - run: go test ./...
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Attach the playground
+        run: |
+          sh web/build.sh
+          (cd web/dist && zip -qr "$RUNNER_TEMP/park-playground.zip" .)
+          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/park-playground.zip"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
