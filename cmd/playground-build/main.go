@@ -13,8 +13,8 @@ import (
 
 // Sample projects shown in the playground's picker, in order.
 var projects = []struct{ Name, Dir, Call string }{
-	{"Roman numerals", "fixtures/roman", `RomanParse.parse("xiv")`},
 	{"Shipping quotes", "examples/shipping", `Shipping.quote("DE", 800)`},
+	{"Roman numerals", "fixtures/roman", `RomanParse.parse("xiv")`},
 	{"Robot on a grid", "examples/robot", `Robot.walk([0, 0], ["right", "down"])`},
 	{"Shapes", "examples/shapes", `Shapes.polygon(6)`},
 }

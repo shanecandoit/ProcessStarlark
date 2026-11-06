@@ -132,8 +132,11 @@ tests. `cmd/park-wasm` is a thin `syscall/js` bridge over it.
 - **Function tables:** done early, in phase 1. Each function is a table with
   inputs as columns and the output last; rows added by an answer are
   highlighted, and each row can be removed.
-- **Hosting:** publish `web/dist` (GitHub Pages or an artifact) and link it
-  from the README.
+- **Hosting: set up.** `.github/workflows/pages.yml` runs the tests, builds
+  `web/dist`, and deploys it to GitHub Pages on every push to `main`
+  (`web/dist` stays out of git). It needs Pages' source set to "GitHub
+  Actions" once. The shipping sample now comes first, for business visitors.
+  Next: link the live URL from the README.
 
 ## Non-goals
 

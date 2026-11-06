@@ -1,14 +1,31 @@
 # Park
 
-**Build a function by writing down examples. Add code when you're ready.**
+**Write down the answers you know. Code fills in the rest. Anything else, Park
+asks about.**
 
-A function turns an input into an output. In most programming languages, you
-have to write the code before the function does anything. In Park, you can start
-with examples: a list of inputs and the answers you expect. That list already
-works as a function. Later, you or someone else can write code that handles the
-inputs you didn't list.
+Usually, the people who know a business's rules write requirements, and
+developers turn them into code. Cases the requirements missed get guessed, and
+the document and the system drift apart.
+
+In Park, the people who know the rules write **examples** instead: "a 500 g
+parcel to the US costs $5.99". The examples aren't a description of the
+system; they are its answers, from the day they're written. Developers then
+write code for the general rule, filling in the cases nobody listed. Code
+never overrides an example, and Park checks that the two agree. When a case
+comes up that neither covers, Park doesn't guess: it asks the people who own
+the rule, and their answer becomes a new example.
+
+- **For business teams and buyers:** [Park for business teams](docs/for-business.md)
+  walks through a shipping-quote example and compares Park with specs,
+  spreadsheets, rules engines, and low-code tools.
+- **For programmers:** read on, then see [Why Park?](docs/why-park.md).
 
 ## How it works: Roman numerals
+
+A function turns an input into an output. In most programming languages, you
+have to write the code before the function does anything. In Park, you can
+start with examples: a list of inputs and the answers you expect. That list
+already works as a function.
 
 **1. Write down answers you know.** Each example is a call and its answer:
 
@@ -72,13 +89,14 @@ Now `xiv` gives `14`. Your examples are still in charge:
 
 ## Why use it?
 
-- **You can start before you know how to code.** Examples are enough to begin.
-- **It says "I don't know" instead of guessing,** and you can answer by adding
-  a new example.
+- **The people who know the answers write them.** Examples are enough to
+  start, with no code and no handoff.
+- **It says "I don't know" instead of guessing,** and the answer becomes a new
+  example.
+- **Every answer explains itself.** `park run --why` shows which example or
+  code produced each part of an answer.
 - **Every function shows its examples.** Park builds a web page, `park.html`,
   listing each function with real inputs and outputs.
-
-Read more in [Why Park?](docs/why-park.md).
 
 ## Try it
 
@@ -99,7 +117,8 @@ go build -o park ./cmd/park
 Then open `park.html` in this folder to see every function and its examples.
 
 To try Park in a browser instead, run `sh serve.sh` and open
-<http://localhost:8000>. The playground runs the same engine, compiled to
+<http://localhost:8000>. Pushes to `main` also publish the playground to
+GitHub Pages (see [.github/workflows/pages.yml](.github/workflows/pages.yml)). The playground runs the same engine, compiled to
 WebAssembly: edit the samples, run calls, and answer Park's questions inline.
 The root Roman demo is two files, `roman_parse.star` and `roman_add.star`, each
 holding its code and examples. A separate copy in `fixtures/roman/` is
@@ -108,6 +127,8 @@ before the command.
 
 ## Learn more
 
+- [Park for business teams](docs/for-business.md): the idea without code,
+  and how it differs from the tools business teams use today.
 - [Why Park?](docs/why-park.md): how Park compares with other languages.
 - [Reference](docs/reference.md): file formats, commands, and the exact rules.
 - [Design decisions](docs/design.md): what was decided and why.

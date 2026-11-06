@@ -305,6 +305,12 @@ returns the new map plus a snapshot. Go keeps no state between calls.
 
 ## Resolved questions
 
+- **Audience — resolved 2026-11-06.** The idea is explained for business
+  readers (users who'd write examples, and buyers); the technical docs and CLI
+  are for programmers. The aim is a B2B product. See
+  [Direction](ideas-direction.md#positioning) and
+  [Park for business teams](for-business.md).
+
 - **Deliberate exceptions — resolved by [D17](#d17-every-example-is-a-strict-implementation-check).**
   Keep strict checks; no exception annotation in the current version.
 - **Purpose of the two-example rule — revised in [D18](#d18-code-without-two-examples-runs-unconfirmed).**
@@ -313,9 +319,6 @@ returns the new map plus a snapshot. Go keeps no state between calls.
 
 ## Open questions
 
-- **Audience.** The README addresses non-programmers; the docs and CLI assume
-  programmers. Pick one. [Direction](ideas-direction.md#positioning)
-  recommends programmers and language people.
 - **Examples for undeclared functions.** Currently an example must name a
   declared function (with or without a body), and Park reports an error
   otherwise; declaring one is a one-line `def f(x): pass`. Should examples be

@@ -1,7 +1,8 @@
 # Why Park?
 
 This page is for programmers who want to know why Park exists and how it
-differs from what they already use.
+differs from what they already use. For the business case, without code, see
+[Park for business teams](for-business.md).
 
 ## The problem
 

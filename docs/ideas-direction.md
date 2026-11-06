@@ -5,24 +5,39 @@ into [design.md](design.md) as a numbered decision.
 
 ## Positioning
 
-Park is closer to a **programming-language showcase** than a business tool.
-What exists is a precise semantics (examples outrank code, "I don't know" is
-an answer, everything is pure and cached), a design log, and a CLI for
-programmers. A business product would need an editing surface for
-non-programmers, decimals and ranges, multi-user history, and an embedding
-API. None of that is novel, and decision tables, DMN, and rules engines
-already fill that space.
+Decided 2026-11-06: **the idea is for business readers; the technology is
+for programmers; the goal is a B2B product.**
 
-So: lead with the idea, aimed at programmers and language people. The
-business-shaped examples (shipping zones) stay as demos of the idea, not as a
-product.
+- **The idea** is a different handoff between the people who know the rules
+  and the developers who build them. Business users write examples instead of
+  requirements; the examples are the system's answers from day one;
+  developers backfill code for the general rule; gaps become questions back to
+  the rule's owner. That has to make sense to non-programmers, both the users
+  who'd write examples and the buyers who'd pay. See
+  [Park for business teams](for-business.md).
+- **The technology** (the semantics, the CLI, the design log, the playground)
+  is for programmers, and is what makes the idea credible. Language people
+  remain an audience for the write-up (#7) and the related work below.
+- **The product** would be a B2B SaaS or similar. Today's code is the engine
+  and a proof of the idea, not the product. See [Product path](#product-path).
 
-The one-sentence pitch: **a function is a table of examples a person wrote,
-with code filling in the gaps, and the examples always win.**
+Two pitches, one idea:
 
-### Related work to position against
+- Business: **write down the answers you know; code fills in the rest; anything
+  else, Park asks.**
+- Programmers: **a function is a table of examples a person wrote, with code
+  filling in the gaps, and the examples always win.**
 
-People will ask "how is this different from X?" first.
+Buyers will compare Park with specs and tickets, spreadsheets, rules engines
+and decision tables (DMN, BRMS), low-code builders, and BDD scenarios. The
+business doc answers each. The short version: those tools either describe the
+system without running, or run without asking, and Park's examples run *and*
+its gaps ask.
+
+### Related work to position against (for programmers)
+
+Programmers and language people will ask "how is this different from X?"
+first.
 
 | Work | Shared idea | Park's difference |
 |---|---|---|
@@ -132,7 +147,7 @@ question reruns the last call.
 **Status: phases 1 and 2 done** (runs, shares, saves, downloads). See
 [plan-web-playground.md](plan-web-playground.md). It's the biggest reach
 multiplier: nothing to install, and `park.html` becomes live. The `--why`
-view is in. Next: host it publicly.
+view is in, and a GitHub Pages workflow publishes it on every push to `main`.
 
 ### 7. Write-up
 
@@ -152,8 +167,25 @@ with it, but nothing should close it off. Constraints that keep the door open:
 - No model, API key, or network in the core runtime. A synthesizer is an
   external `Resolver` or a separate command.
 
-## Deferred
+## Product path
 
-Ranges and patterns in examples, decimals, a non-programmer editing UI,
-multi-user history, a REST API, and embedding Park as a library. Revisit
-these once the showcase has an audience.
+What a business team would need before using Park day to day, roughly in
+order. None of it is built; the engine is.
+
+1. **Hosted playground** with the shipping sample first, as the thing to send
+   people. (The Pages workflow publishes it; the sample is already first.)
+2. **A table editor for examples and questions,** so rule owners never see
+   source files. The playground's function tables and question panel are the
+   start of it.
+3. **Business-shaped values:** decimals and money, dates, and ranges or
+   patterns in examples ("any parcel over 30 kg").
+4. **Overrides** (#2): negotiated prices and one-off exceptions are everyday
+   business cases, so D17 needs settling before this ships.
+5. **Accounts, change history, and approvals:** who changed which answer,
+   and review before it goes live. `--why` (#1) is the read side of the same
+   audit story.
+6. **An API** so other systems can ask Park for answers, and embedding Park as
+   a library.
+
+Until there's interest from real teams, keep this list as direction and keep
+building the engine and the demo.
