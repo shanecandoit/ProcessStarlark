@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"time"
 
 	"park/internal/catalog"
 	"park/internal/engine"
@@ -369,7 +368,7 @@ func (c *CLI) run(ctx context.Context, p *project.Project, args []string) error 
 	if err != nil {
 		return err
 	}
-	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	callCtx, cancel := context.WithTimeout(ctx, engine.Timeout)
 	output, err := e.Run(callCtx, qualified, input)
 	cancel()
 	var unresolved *engine.Unresolved
@@ -430,71 +429,25 @@ func (c *CLI) test(ctx context.Context, p *project.Project, args []string) error
 	if fs.NArg() > 1 {
 		return fail(2, "test accepts at most one Process.function")
 	}
-	if fs.NArg() == 1 {
-		if _, _, err := p.Function(fs.Arg(0)); err != nil {
-			return err
-		}
-	}
-	e, err := engine.New(p)
+	report, err := engine.Check(ctx, p, fs.Arg(0))
 	if err != nil {
 		return err
 	}
-	e.Testing = true
-	checks, records, failures := 0, 0, 0
-	var questions []project.Question
-	for _, name := range project.Names(p.Processes) {
-		proc := p.Processes[name]
-		for _, fn := range project.Names(proc.Functions) {
-			qualified := name + "." + fn
-			if fs.NArg() == 1 && fs.Arg(0) != qualified {
-				continue
-			}
-			f := proc.Functions[fn]
-			if !f.Implemented {
-				records += len(f.Examples)
-				fmt.Fprintf(c.Out, "DATA %s: %d example-only records\n", qualified, len(f.Examples))
-				continue
-			}
-			if !f.Ready() {
-				failures++
-				fmt.Fprintf(c.Err, "FAIL %s: needs examples\n", qualified)
-				continue
-			}
-			e.Bypass = qualified
-			for _, pair := range f.Examples {
-				checks++
-				callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-				output, err := e.Run(callCtx, qualified, pair.Input)
-				cancel()
-				var unresolved *engine.Unresolved
-				if errors.As(err, &unresolved) {
-					if q, qerr := project.NewQuestion(p, unresolved.Function, unresolved.Input); qerr == nil {
-						questions = append(questions, q)
-					}
-				}
-				for _, pr := range e.Proposals() {
-					if q, qerr := project.NewProposal(p, pr.Function, pr.Input, pr.Output); qerr == nil {
-						questions = append(questions, q)
-					}
-				}
-				if err != nil {
-					failures++
-					fmt.Fprintf(c.Err, "FAIL %s (%s:%d): %v\n", engine.FormatCall(qualified, f.Inputs, pair.Input), pair.Path, pair.Line, err)
-				} else if samples.Key(output) != samples.Key(pair.Output) {
-					failures++
-					fmt.Fprintf(c.Err, "FAIL %s (%s:%d): got %s; expected %s\n", engine.FormatCall(qualified, f.Inputs, pair.Input), pair.Path, pair.Line, samples.Literal(output), samples.Literal(pair.Output))
-				}
-			}
+	for _, line := range report.Lines {
+		if line.Failed {
+			fmt.Fprintln(c.Err, line.Text)
+		} else {
+			fmt.Fprintln(c.Out, line.Text)
 		}
 	}
-	fmt.Fprintf(c.Out, "%d implementation checks, %d example-only records, %d failures\n", checks, records, failures)
-	if len(questions) > 0 {
+	fmt.Fprintln(c.Out, report.Summary())
+	if questions := report.Questions; len(questions) > 0 {
 		if err := c.publish(p, nil, questions...); err != nil {
 			return err
 		}
 		fmt.Fprintf(c.Err, "Queued %d questions in %s; see park list.\n", len(questions), project.QuestionsFile)
 	}
-	if failures > 0 {
+	if report.Failures > 0 {
 		return fail(1, "tests failed")
 	}
 	return nil

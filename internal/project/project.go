@@ -246,7 +246,6 @@ func LoadWith(root string, overlay map[string][]byte) (*Project, error) {
 		return nil, err
 	}
 	root = canonicalRoot
-	p := &Project{Root: root, Processes: map[string]*Process{}, Files: map[string][]byte{}}
 	candidates := map[string]bool{}
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -275,8 +274,7 @@ func LoadWith(root string, overlay map[string][]byte) (*Project, error) {
 	if len(candidates) > MaxFiles {
 		return nil, fmt.Errorf("project exceeds %d files", MaxFiles)
 	}
-	total := 0
-	var examples []pending
+	files := map[string][]byte{}
 	for _, rel := range Names(candidates) {
 		b, ok := overlay[rel]
 		if !ok {
@@ -295,6 +293,26 @@ func LoadWith(root string, overlay map[string][]byte) (*Project, error) {
 				return nil, err
 			}
 		}
+		files[rel] = b
+	}
+	return FromFiles(root, files)
+}
+
+// FromFiles validates a project held in memory: module file names mapped to
+// their contents. It touches no filesystem, so it also runs in the browser.
+// Names must be flat .star module names; root is recorded but never read.
+func FromFiles(root string, files map[string][]byte) (*Project, error) {
+	p := &Project{Root: root, Processes: map[string]*Process{}, Files: map[string][]byte{}}
+	if len(files) > MaxFiles {
+		return nil, fmt.Errorf("project exceeds %d files", MaxFiles)
+	}
+	total := 0
+	var examples []pending
+	for _, rel := range Names(files) {
+		if !strings.HasSuffix(rel, ".star") || rel != filepath.Base(rel) || strings.HasPrefix(rel, ".") {
+			return nil, fmt.Errorf("modules must be .star files in the project root: %q", rel)
+		}
+		b := files[rel]
 		if len(b) > MaxFileBytes {
 			return nil, fmt.Errorf("%s exceeds file limit", rel)
 		}
@@ -573,7 +591,11 @@ func (p *Project) Function(qualified string) (*Process, *Function, error) {
 		if len(p.Processes) > 0 {
 			known = strings.Join(Names(p.Processes), ", ")
 		}
-		return nil, nil, fmt.Errorf("unknown process %s in %s (processes here: %s)", parts[0], p.Root, known)
+		where := ""
+		if p.Root != "" {
+			where = " in " + p.Root
+		}
+		return nil, nil, fmt.Errorf("unknown process %s%s (processes here: %s)", parts[0], where, known)
 	}
 	f := proc.Functions[parts[1]]
 	if f == nil {

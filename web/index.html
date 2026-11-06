@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Park Playground</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar">
+  <h1>Park <span>playground</span></h1>
+  <p class="tagline">Examples first. Code fills the gaps. Examples always win.</p>
+  <label class="picker">Project
+    <select id="sample"></select>
+  </label>
+  <button id="reset" type="button" class="quiet">Reset</button>
+</header>
+
+<main class="layout">
+  <section class="pane source" aria-label="Source files">
+    <div class="tabs" id="tabs" role="tablist"></div>
+    <textarea id="editor" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Source"></textarea>
+    <p id="problem" class="problem" hidden></p>
+  </section>
+
+  <section class="pane work" aria-label="Run and answer">
+    <form id="runform" class="runbox">
+      <label for="call">Call</label>
+      <input id="call" spellcheck="false" autocomplete="off" placeholder='RomanParse.parse("xiv")'>
+      <button type="submit">Run</button>
+    </form>
+    <div id="result" class="result" hidden>
+      <span id="status" class="badge"></span>
+      <code id="output"></code>
+      <p id="message"></p>
+    </div>
+
+    <h2>Questions <span id="qcount" class="count"></span></h2>
+    <p class="hint" id="qhint">Calls Park couldn't answer, and answers from code that isn't confirmed yet.</p>
+    <ul id="questions" class="questions"></ul>
+
+    <div class="tabs" role="tablist">
+      <button type="button" class="tab" data-view="functions" aria-selected="true">Functions</button>
+      <button type="button" class="tab" data-view="catalog" aria-selected="false">park.html</button>
+      <button type="button" class="tab" data-view="tests" aria-selected="false">Tests</button>
+    </div>
+    <div id="view-functions" class="view"></div>
+    <div id="view-catalog" class="view" hidden><iframe id="catalog" title="Generated catalog" sandbox="allow-same-origin"></iframe></div>
+    <div id="view-tests" class="view" hidden>
+      <button id="test" type="button">Run park test</button>
+      <pre id="testout" class="testout"></pre>
+    </div>
+  </section>
+</main>
+
+<div id="loading" class="loading">Loading Park…</div>
+<script src="wasm_exec.js"></script>
+<script src="samples.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

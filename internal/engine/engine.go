@@ -43,8 +43,37 @@ func FormatCall(qualified string, names []string, input map[string]any) string {
 	return project.FormatCall(qualified, names, input)
 }
 
+// Cache stores results computed by confirmed code, keyed by function, project
+// revision, and canonical input. Implementations must be safe to discard.
+type Cache interface {
+	Get(function, revision string, input any) (any, bool, error)
+	Put(function, revision string, input, output any) error
+}
+
+// DirCache is the CLI's disk cache: one JSON record per result in .cache/.
+type DirCache struct{ Root string }
+
+func (c DirCache) dir() (string, error) { return project.SafePath(c.Root, ".cache") }
+
+func (c DirCache) Get(function, revision string, input any) (any, bool, error) {
+	dir, err := c.dir()
+	if err != nil {
+		return nil, false, err
+	}
+	return samples.ReadCache(dir, function, revision, input)
+}
+
+func (c DirCache) Put(function, revision string, input, output any) error {
+	dir, err := c.dir()
+	if err != nil {
+		return err
+	}
+	return samples.WriteCache(dir, function, revision, input, output)
+}
+
 type Engine struct {
 	Project    *project.Project
+	Cache      Cache // Nil disables caching.
 	bodies     map[string]*starlark.Function
 	loaded     map[string]bool
 	unresolved *Unresolved
@@ -57,6 +86,10 @@ type Engine struct {
 
 func New(p *project.Project) (*Engine, error) {
 	e := &Engine{Project: p, bodies: map[string]*starlark.Function{}, loaded: map[string]bool{}, active: map[string]bool{}}
+	// Projects loaded from disk cache on disk; in-memory ones (root "") don't.
+	if p.Root != "" {
+		e.Cache = DirCache{Root: p.Root}
+	}
 	for _, name := range project.Names(p.Processes) {
 		if err := e.load(name); err != nil {
 			return nil, err
@@ -368,12 +401,8 @@ func (e *Engine) dispatch(thread *starlark.Thread, qualified string, raw any) (a
 			return out, nil
 		}
 	}
-	cacheDir, err := project.SafePath(e.Project.Root, ".cache")
-	if err != nil {
-		return nil, err
-	}
-	if !e.Testing {
-		if out, ok, err := samples.ReadCache(cacheDir, qualified, e.Project.Revision, input); err != nil {
+	if !e.Testing && e.Cache != nil {
+		if out, ok, err := e.Cache.Get(qualified, e.Project.Revision, input); err != nil {
 			return nil, err
 		} else if ok {
 			return out, nil
@@ -415,8 +444,8 @@ func (e *Engine) dispatch(thread *starlark.Thread, qualified string, raw any) (a
 		e.proposals = append(e.proposals, Proposal{Function: qualified, Input: input, Output: output})
 	}
 	// Cache only results that rest entirely on confirmed code.
-	if !e.Testing && len(e.proposals) == 0 {
-		if err := samples.WriteCache(cacheDir, qualified, e.Project.Revision, input, output); err != nil {
+	if !e.Testing && e.Cache != nil && len(e.proposals) == 0 {
+		if err := e.Cache.Put(qualified, e.Project.Revision, input, output); err != nil {
 			return nil, err
 		}
 	}

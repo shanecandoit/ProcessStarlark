@@ -100,6 +100,11 @@ func LoadQuestions(p *Project) (questions []Question, stale []string, err error)
 	if err != nil {
 		return nil, nil, err
 	}
+	return ParseQuestions(p, b)
+}
+
+// ParseQuestions reads queue contents held in memory.
+func ParseQuestions(p *Project, b []byte) (questions []Question, stale []string, err error) {
 	if len(b) > MaxFileBytes {
 		return nil, nil, fmt.Errorf("%s exceeds file limit", QuestionsFile)
 	}

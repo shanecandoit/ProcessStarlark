@@ -109,6 +109,9 @@ before the command.
 - [Sample projects](docs/ideas-sample-projs.md): a game, a business tool, and
   geometry, each runnable from [`examples/`](examples).
 - [Implementation plan](plan.md): the full contract.
+- [Browser playground](docs/plan-web-playground.md): Park compiled to
+  WebAssembly. Build with `web/build.sh`, then serve `web/dist`.
+- [Direction](docs/ideas-direction.md): where Park goes next.
 
 **Status:** early. The command-line tool works end to end, and its details may
 still change.
