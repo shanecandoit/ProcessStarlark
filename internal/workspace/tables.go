@@ -2,14 +2,12 @@ package workspace
 
 import (
 	"context"
-	"encoding/csv"
 	"fmt"
 	"strings"
 
 	"github.com/shanecandoit/ProcessStarlark/internal/engine"
 	"github.com/shanecandoit/ProcessStarlark/internal/project"
 	"github.com/shanecandoit/ProcessStarlark/internal/samples"
-	"github.com/shanecandoit/ProcessStarlark/internal/source"
 )
 
 // MaxPasteRows bounds one paste, so a stray paste can't flood a module.
@@ -17,83 +15,8 @@ const MaxPasteRows = 500
 
 // Table editing: the playground shows each function as a table (inputs, then
 // the output) and lets people edit it like a spreadsheet. Cells are typed as
-// text, so `US` in a column of strings means "US", and `02134` stays a string
-// there. Every edit is an ordinary example line in the function's module.
-
-// cell turns typed text into a value. A column whose existing values are all
-// strings (or all whole numbers) takes that type; otherwise the cell is read
-// as a Starlark literal if it is one, and as a string if not.
-func cell(text string, column []any) (any, error) {
-	trimmed := strings.TrimSpace(text)
-	if trimmed == "" {
-		return nil, fmt.Errorf("empty cell; write \"\" for empty text")
-	}
-	literal, litErr := source.ParseValue(trimmed)
-	switch kind(column) {
-	case "string":
-		if s, ok := literal.(string); ok && litErr == nil {
-			return s, nil // Quoted on purpose, e.g. to keep spaces.
-		}
-		return trimmed, nil
-	case "int":
-		if n, ok := literal.(int64); ok && litErr == nil {
-			return n, nil
-		}
-		return nil, fmt.Errorf("%q: this column holds whole numbers", trimmed)
-	}
-	if litErr == nil {
-		return literal, nil
-	}
-	return trimmed, nil
-}
-
-func kind(column []any) string {
-	k := ""
-	for _, v := range column {
-		var this string
-		switch v.(type) {
-		case string:
-			this = "string"
-		case int64:
-			this = "int"
-		default:
-			return ""
-		}
-		if k != "" && k != this {
-			return ""
-		}
-		k = this
-	}
-	return k
-}
-
-// row binds typed cells (one per input, then the output) to a function.
-func row(f *project.Function, cells []string) (map[string]any, any, error) {
-	if len(cells) != len(f.Inputs)+1 {
-		return nil, nil, fmt.Errorf("expected %d cells (%s, then %s), got %d", len(f.Inputs)+1, strings.Join(f.Inputs, ", "), f.Output, len(cells))
-	}
-	input := map[string]any{}
-	for i, name := range f.Inputs {
-		var column []any
-		for _, ex := range f.Examples {
-			column = append(column, ex.Input[name])
-		}
-		v, err := cell(cells[i], column)
-		if err != nil {
-			return nil, nil, fmt.Errorf("%s: %w", name, err)
-		}
-		input[name] = v
-	}
-	var column []any
-	for _, ex := range f.Examples {
-		column = append(column, ex.Output)
-	}
-	out, err := cell(cells[len(cells)-1], column)
-	if err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", f.Output, err)
-	}
-	return input, out, nil
-}
+// text (see project.ParseCell). Every edit is an ordinary example line in the
+// function's module.
 
 // PutExample adds a table row, or rewrites the row whose call is replace.
 // cells holds one typed cell per input, then the output.
@@ -106,7 +29,7 @@ func PutExample(ctx context.Context, files Files, function string, cells []strin
 	if err != nil {
 		return failure(files, err)
 	}
-	input, out, err := row(f, cells)
+	input, out, err := project.ParseRow(f, cells)
 	if err != nil {
 		return failure(files, err)
 	}
@@ -146,18 +69,11 @@ func PasteExamples(ctx context.Context, files Files, function, text string) Resu
 	if err != nil {
 		return failure(files, err)
 	}
-	reader := csv.NewReader(strings.NewReader(strings.TrimRight(text, "\r\n")))
-	reader.Comma = ','
-	if strings.Contains(text, "\t") {
-		reader.Comma = '\t'
-	}
-	reader.FieldsPerRecord = -1
-	reader.LazyQuotes = true
-	records, err := reader.ReadAll()
+	records, err := project.ReadRecords(text)
 	if err != nil {
 		return failure(files, fmt.Errorf("pasted rows: %w", err))
 	}
-	header := append(append([]string{}, f.Inputs...), f.Output)
+	header := f.Columns()
 	if len(records) > 0 && strings.EqualFold(strings.Join(trim(records[0]), "\t"), strings.Join(header, "\t")) {
 		records = records[1:]
 	}
@@ -176,7 +92,7 @@ func PasteExamples(ctx context.Context, files Files, function, text string) Resu
 		if len(trim(rec)) == 1 && trim(rec)[0] == "" {
 			continue // blank line
 		}
-		input, out, err := row(f, rec)
+		input, out, err := project.ParseRow(f, rec)
 		if err != nil {
 			return failure(files, fmt.Errorf("pasted row %d: %w", i+1, err))
 		}

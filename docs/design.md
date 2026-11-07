@@ -285,6 +285,29 @@ question or error.
 - The playground always records the tree and shows it under each answer
   ("Why this answer"), where each location opens the file at that line.
 
+### D22. Resolvers answer misses, only as proposals
+**Implemented (engine only)** · 2026-11-06
+
+`engine.Resolver` is a hook for answers from outside the project: a model,
+a default, an external program. When a call has no example, no cached result,
+and no code, the engine offers it to each of `Engine.Resolvers` in turn. A
+resolver returns an answer, `ErrUnknown` to pass, or an error that fails the
+run. If none answers, the call is unresolved as before (D16).
+
+- **A resolver's answer is a proposal** (D18): returned for the run, queued
+  for a person to confirm, never cached, and never counted as an example.
+  Nothing that used it is cached either.
+- `park test` never asks resolvers, so a missing answer still fails a test.
+- `--why` shows the source as `proposed by <name>`.
+- Answers are normalized through canonical JSON, so a resolver returns
+  ordinary Park values or fails clearly.
+- Why: without it, a run stops at the first miss, and a deep call chain takes
+  one ask-answer-rerun round per miss. With a resolver the run finishes, and
+  every guess shows up together for review. It also keeps models out of the
+  core (see [Direction](ideas-direction.md#left-open-on-purpose-synthesis)).
+- Not built yet: any resolver, or a CLI flag to plug one in (for example, an
+  external command that reads a call as JSON and writes an answer).
+
 ## Playground
 
 ### D19. The browser runs the same engine, on files in memory
@@ -330,6 +353,28 @@ Quotes keep a string exact, as in `" Germany "`.
   row still stands (D6), and `park test` will flag it (D17).
 - Cost: in an empty or mixed column, `True`, `None`, and numbers are read as
   values, not text. Quote them to keep them as text.
+
+### D23. `park import` proposes a table's rows
+**Implemented** · 2026-11-06
+
+`park import [--add] P.fn FILE` reads a CSV or TSV file whose first row names
+the function's inputs and output, in any order. Cells are typed as in table
+edits (D21). The whole file must read cleanly before anything is written.
+
+- Rows matching an example are skipped. Rows contradicting an example, or
+  answered two ways in the file, are listed and never imported.
+- If the function has code, each new row is run against it (without the cache
+  or resolvers) and agreements and disagreements are reported.
+- **By default new rows become proposals** in `questions.txt`, and confirming
+  one is `park example add`. Imported data from logs or other systems is
+  untrusted until a person looks at it, the same rule as D18. `--add` writes
+  them as examples instead, for a table the team already owns.
+- A ready function's code answers every call, so its proposals would leave the
+  queue at once (D16). Import queues nothing for it and reports only the
+  disagreements; keeping the file's answers there takes `--add` or a code fix.
+- Cost: proposals for code with fewer than two examples leave the queue once it
+  gets its second example, including ones the code disagrees with. Import
+  says so.
 
 ## Resolved questions
 

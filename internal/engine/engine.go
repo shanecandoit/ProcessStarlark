@@ -29,13 +29,14 @@ func (u *Unresolved) Error() string {
 	return "unresolved call " + FormatCall(u.Function, u.Inputs, u.Input)
 }
 
-// Proposal is an answer computed by an implementation that does not yet have
-// two examples. It is unconfirmed: shown to the user to confirm as an example,
-// never treated as one, and never cached.
+// Proposal is an unconfirmed answer: computed by an implementation that does
+// not yet have two examples, or given by a Resolver. It is shown to the user to
+// confirm as an example, never treated as one, and never cached.
 type Proposal struct {
 	Function string
 	Input    map[string]any
 	Output   any
+	By       string // The resolver's name; empty for unconfirmed code.
 }
 
 // FormatCall renders a call as Process.fn(name=value, ...) in signature order.
@@ -72,8 +73,11 @@ func (c DirCache) Put(function, revision string, input, output any) error {
 }
 
 type Engine struct {
-	Project    *project.Project
-	Cache      Cache // Nil disables caching.
+	Project *project.Project
+	Cache   Cache // Nil disables caching.
+	// Resolvers answer, in order, calls with no example and no code. Their
+	// answers are proposals. Empty means such calls are unresolved.
+	Resolvers  []Resolver
 	bodies     map[string]*starlark.Function
 	loaded     map[string]bool
 	unresolved *Unresolved
@@ -370,6 +374,7 @@ func (e *Engine) Run(ctx context.Context, qualified string, input any) (any, err
 	e.stack = nil
 	thread := &starlark.Thread{Name: qualified}
 	thread.SetMaxExecutionSteps(MaxSteps)
+	thread.SetLocal(contextKey, ctx)
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
@@ -461,6 +466,17 @@ func (e *Engine) resolve(thread *starlark.Thread, qualified string, raw any, ste
 	}
 	body := e.bodies[qualified]
 	if body == nil {
+		out, by, ok, err := e.ask(thread, Call{Function: qualified, Inputs: f.Inputs, Input: input})
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			e.proposals = append(e.proposals, Proposal{Function: qualified, Input: input, Output: out, By: by})
+			if step != nil {
+				step.Source, step.By, step.Path, step.Line = SourceProposed, by, f.Path, f.Line
+			}
+			return out, nil
+		}
 		u := &Unresolved{Function: qualified, Inputs: f.Inputs, Input: input}
 		e.unresolved = u
 		if step != nil {

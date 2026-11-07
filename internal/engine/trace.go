@@ -13,6 +13,7 @@ const (
 	SourceExample     = "example"          // A person wrote it.
 	SourceCode        = "code"             // Computed by code with two or more examples.
 	SourceUnconfirmed = "unconfirmed code" // Computed by code with fewer than two examples.
+	SourceProposed    = "proposed"         // A Resolver answered it; see Step.By.
 	SourceUnknown     = "unknown"          // Nothing could answer it; it becomes a question.
 )
 
@@ -24,6 +25,7 @@ type Step struct {
 	Input    map[string]any
 	Output   any
 	Source   string // One of the Source constants; empty if the call never bound.
+	By       string // The resolver, when Source is SourceProposed.
 	Path     string // The example's location, or the function's def.
 	Line     int
 	Failed   bool   // The call did not return.
@@ -66,6 +68,9 @@ func WriteTrace(w io.Writer, root *Step) error {
 	var walk func(*Step, int)
 	walk = func(s *Step, depth int) {
 		source := s.Source
+		if s.By != "" {
+			source += " by " + s.By
+		}
 		if s.Error != "" {
 			source = "failed"
 		}

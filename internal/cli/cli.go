@@ -26,6 +26,7 @@ Usage: park [--root PATH] COMMAND [FLAGS] [OPERANDS]
   run [--why] 'P.fn(args)'          Run a call; unanswered calls go to questions.txt
   example add 'P.fn(args) == value' Add an example to the function's module
   example remove 'P.fn(args)'       Remove an example wherever it is written
+  import [--add] P.fn FILE          Propose a CSV/TSV table's rows (or add them as examples)
   test [P.fn]                       Check examples against implementations
   build                             Validate and regenerate park.html
 
@@ -111,7 +112,7 @@ func (c *CLI) execute(ctx context.Context, args []string) error {
 		return c.init(args, *rootFlag)
 	}
 	switch command {
-	case "list", "run", "test", "build", "example":
+	case "list", "run", "test", "build", "example", "import":
 	default:
 		return fail(2, "unknown command %q", command)
 	}
@@ -128,6 +129,8 @@ func (c *CLI) execute(ctx context.Context, args []string) error {
 			return c.test(ctx, nil, args)
 		case "build":
 			return parse(c.flags("build"), args)
+		case "import":
+			return c.importRows(ctx, nil, args)
 		case "example":
 			if helpRequested {
 				fmt.Fprintln(c.Out, "Usage: park example add 'P.fn(args) == value' | park example remove 'P.fn(args)'")
@@ -176,6 +179,8 @@ func (c *CLI) execute(ctx context.Context, args []string) error {
 		return c.run(ctx, p, args)
 	case "test":
 		return c.test(ctx, p, args)
+	case "import":
+		return c.importRows(ctx, p, args)
 	}
 	return nil
 }
@@ -415,7 +420,14 @@ func (c *CLI) propose(p *project.Project, proposals []engine.Proposal) error {
 	if err := c.publish(p, nil, questions...); err != nil {
 		return err
 	}
-	fmt.Fprintf(c.Err, "park: unconfirmed: this answer comes from code with fewer than two examples.\nProposed in %s; confirm each that is right:\n", project.QuestionsFile)
+	from := "code with fewer than two examples"
+	for _, pr := range proposals {
+		if pr.By != "" {
+			from = "proposed answers (code with fewer than two examples, or a resolver)"
+			break
+		}
+	}
+	fmt.Fprintf(c.Err, "park: unconfirmed: this answer comes from %s.\nProposed in %s; confirm each that is right:\n", from, project.QuestionsFile)
 	for _, q := range questions {
 		fmt.Fprintf(c.Err, "  park example add '%s'\n", q.Line())
 	}

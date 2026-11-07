@@ -193,6 +193,7 @@ list                              List processes and function readiness
 run [--why] 'P.fn(args)'          Run a call; unanswered calls go to questions.txt
 example add 'P.fn(args) == value' Add an example to the function's module
 example remove 'P.fn(args)'       Remove an example wherever it is written
+import [--add] P.fn FILE          Propose a CSV/TSV table's rows (or add them as examples)
 test [P.fn]                       Check examples against implementations
 build                             Validate and regenerate park.html
 ```
@@ -218,6 +219,25 @@ build                             Validate and regenerate park.html
 - `example add` writes the line into the target function's own module, after
   that module's last example. `example remove` deletes the example wherever it
   is written.
+- `import` reads a CSV or TSV file whose first row names the function's
+  inputs and output, in any order:
+
+  ```text
+  $ cat zones.csv
+  country,result
+  DE,international
+  CA,europe
+  $ park import Zones.zone zones.csv
+  Read 2 rows for Zones.zone: 1 new, 0 already in the examples, 1 conflicting.
+    conflict, not imported: line 3: Zones.zone("CA") is "north-america" in the examples, "europe" in the file
+  Proposed 1 answer in questions.txt. ...
+  ```
+
+  New rows become proposed answers to confirm with `park example add`;
+  `--add` writes them as examples instead. Rows that contradict an example are
+  never imported. If the function has code, each new row is checked against
+  it. A ready function's rows are not queued, because its code already answers
+  them; only disagreements are reported.
 - Flags come before positional operands. Run `park COMMAND --help` for flags.
 - `build` and the `example` commands regenerate `park.html` when they succeed.
   After editing `.star` files by hand, run `park build`. Runtime cache writes
