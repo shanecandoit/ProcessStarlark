@@ -79,6 +79,7 @@ type Engine struct {
 	// answers are proposals. Empty means such calls are unresolved.
 	Resolvers  []Resolver
 	bodies     map[string]*starlark.Function
+	deps       map[string]Deps
 	loaded     map[string]bool
 	unresolved *Unresolved
 	proposals  []Proposal
@@ -94,7 +95,7 @@ type Engine struct {
 }
 
 func New(p *project.Project) (*Engine, error) {
-	e := &Engine{Project: p, bodies: map[string]*starlark.Function{}, loaded: map[string]bool{}, active: map[string]bool{}}
+	e := &Engine{Project: p, bodies: map[string]*starlark.Function{}, deps: map[string]Deps{}, loaded: map[string]bool{}, active: map[string]bool{}}
 	// Projects loaded from disk cache on disk; in-memory ones (root "") don't.
 	if p.Root != "" {
 		e.Cache = DirCache{Root: p.Root}
@@ -306,6 +307,7 @@ func (e *Engine) load(name string) error {
 	if walkErr != nil {
 		return walkErr
 	}
+	e.findDeps(proc, file, aliases)
 	thread := &starlark.Thread{Name: "initialize " + name}
 	thread.SetMaxExecutionSteps(MaxSteps)
 	globals, err := program.Init(thread, pre)

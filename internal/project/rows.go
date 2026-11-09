@@ -199,3 +199,39 @@ func blank(rec []string) bool {
 	}
 	return true
 }
+
+// ReadRows reads pasted or file text into rows. When the first row names any
+// of the function's columns it is a header, read as by ReadTable; otherwise
+// every row holds the inputs in signature order, then the output.
+func ReadRows(f *Function, text string) ([]Row, error) {
+	records, lines, err := readRecords(text)
+	if err != nil {
+		return nil, err
+	}
+	if len(records) > 0 && namesColumn(f, records[0]) {
+		return ReadTable(f, text)
+	}
+	var rows []Row
+	for n, rec := range records {
+		if blank(rec) {
+			continue
+		}
+		input, out, err := ParseRow(f, rec)
+		if err != nil {
+			return nil, fmt.Errorf("line %d: %w", lines[n], err)
+		}
+		rows = append(rows, Row{Line: lines[n], Input: input, Output: out})
+	}
+	return rows, nil
+}
+
+func namesColumn(f *Function, rec []string) bool {
+	for _, cell := range rec {
+		for _, name := range f.Columns() {
+			if strings.EqualFold(strings.TrimSpace(cell), name) {
+				return true
+			}
+		}
+	}
+	return false
+}

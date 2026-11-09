@@ -23,7 +23,10 @@ const state = {
   editing: null,      // {fn, call}: the table row being edited
   drafts: {},         // typed, unsaved table cells, by function and row
   note: null,         // {fn, kind, text, lines}: what the last table edit did
+  importAs: {},       // fn -> "examples" | "propose": where pasted or imported rows go
 };
+
+const MAX_IMPORT_BYTES = 2 << 20; // project.MaxFileBytes
 
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
@@ -105,7 +108,7 @@ async function execute(op, args) {
     }
     if (result.snapshot) state.snapshot = result.snapshot;
     if (op === "run" && state.tour) state.tour.last = { call: args[0], status: result.status, output: result.output || "" };
-    if (op === "addExample" || op === "putExample" || op === "pasteExamples") {
+    if (op === "addExample" || op === "putExample" || op === "pasteExamples" || op === "importRows") {
       const after = exampleKeys(state.snapshot);
       state.fresh = new Set([...after].filter((k) => !before.has(k)));
     } else if (op === "removeExample") {
@@ -312,8 +315,42 @@ function functionCard(f) {
     note ? el("div", { class: "note note-" + note.kind },
       el("p", {}, note.text),
       ...(note.lines || []).map((l) => el("p", { class: "fail" }, l))) : null,
-    f.examples.length ? null : el("p", { class: "hint" }, "No rows yet. Type one and press Enter, or paste rows from a spreadsheet."));
+    importBar(f),
+    f.examples.length ? null : el("p", { class: "hint" }, "No rows yet. Type one and press Enter, paste rows from a spreadsheet, or import a CSV or TSV file."));
 }
+
+// importBar picks where pasted or imported rows go (examples, or proposals
+// to confirm in Questions) and imports a CSV/TSV file. A file's first row may
+// name the columns, in any order; without one, rows are inputs then output.
+function importBar(f) {
+  const mode = el("select", { "aria-label": `Where pasted or imported rows of ${f.qualified} go`, onchange: (e) => { state.importAs[f.qualified] = e.target.value; } },
+    el("option", { value: "examples" }, "as examples"),
+    el("option", { value: "propose" }, "as proposals to confirm"));
+  mode.value = importMode(f.qualified);
+  const file = el("input", { type: "file", accept: ".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain", hidden: true, onchange: async (e) => {
+    const picked = e.target.files?.[0];
+    e.target.value = "";
+    if (!picked) return;
+    if (picked.size > MAX_IMPORT_BYTES) {
+      state.note = { fn: f.qualified, kind: "error", text: `${picked.name} is over ${MAX_IMPORT_BYTES >> 20} MB.` };
+      renderFunctions();
+      return;
+    }
+    let text;
+    try { text = await picked.text(); } catch (err) {
+      state.note = { fn: f.qualified, kind: "error", text: `Could not read ${picked.name}: ${err}` };
+      renderFunctions();
+      return;
+    }
+    await importText(f.qualified, text, picked.name);
+  } });
+  return el("div", { class: "importbar" },
+    el("label", {}, "Pasted and imported rows go in ", mode),
+    el("button", { type: "button", class: "quiet", title: "Read a CSV or TSV file; its first row may name the columns", onclick: () => file.click() }, "Import file…"),
+    file);
+}
+
+const importMode = (fn) => state.importAs[fn] || "examples";
 
 const rowKey = (fn, ex) => fn + "(" + ex.inputs.join(",") + ")=" + ex.output;
 
@@ -352,16 +389,22 @@ function editRow(f, values, replace) {
 }
 
 async function pasteRows(fn, text) {
-  const r = await call("pasteExamples", fn, text);
+  const r = await call("importRows", fn, text, importMode(fn));
   tableResult(fn, r, fn + "\0");
   focusRow(fn, "tr.newrow");
+}
+
+async function importText(fn, text, name) {
+  const r = await call("importRows", fn, text, importMode(fn));
+  if (r.status === "error") r.message = `${name}: ${r.message}`;
+  tableResult(fn, r, null);
 }
 
 // tableResult shows what a table edit did under that table.
 function tableResult(fn, r, draftKey) {
   if (r.status === "error") state.note = { fn, kind: "error", text: r.message };
   else {
-    delete state.drafts[draftKey];
+    if (draftKey !== null) delete state.drafts[draftKey];
     state.note = { fn, kind: r.lines?.length ? "warn" : "ok", text: r.message, lines: (r.lines || []).map((l) => l.text) };
   }
   renderFunctions();

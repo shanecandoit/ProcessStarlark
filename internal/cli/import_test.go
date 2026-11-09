@@ -36,7 +36,7 @@ func TestImportProposesRows(t *testing.T) {
 			t.Errorf("stdout lacks %q:\n%s", want, out)
 		}
 	}
-	for _, want := range []string{`Zones.zone("CA") is "north-america" in the examples, "europe" in the file`, `Zones.zone("JP") is "international" on line 6, "asia" on line 7`} {
+	for _, want := range []string{`Zones.zone("CA") is "north-america" in the examples, "europe" in the table`, `Zones.zone("JP") is "international" on line 6, "asia" on line 7`} {
 		if !strings.Contains(errout, want) {
 			t.Errorf("stderr lacks %q:\n%s", want, errout)
 		}
@@ -89,13 +89,19 @@ func TestImportComparesWithCode(t *testing.T) {
 			t.Errorf("stdout lacks %q:\n%s", want, out)
 		}
 	}
-	for _, want := range []string{`Shipping.quote("FR", 500) is 2500 in the file; the code says 2399`, `code has no answer: Shipping.quote("ZZ", 500)`} {
+	for _, want := range []string{`Shipping.quote("FR", 500) is 2500 in the table; the code says 2399`, `code has no answer: Shipping.quote("ZZ", 500)`} {
 		if !strings.Contains(errout, want) {
 			t.Errorf("stderr lacks %q:\n%s", want, errout)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(root, "questions.txt")); !os.IsNotExist(err) {
-		t.Fatal("a ready function's rows were queued")
+	// The rows themselves are not queued, but the dependency call the code
+	// could not answer is, as park test would.
+	questions := read(t, root, "questions.txt")
+	if strings.Contains(questions, "Shipping.quote") || !strings.Contains(questions, "Zones.zone(\"ZZ\")\n") {
+		t.Fatalf("questions:\n%s", questions)
+	}
+	if !strings.Contains(errout, "Queued 1 question the code raised") {
+		t.Errorf("stderr does not mention the queued question:\n%s", errout)
 	}
 	if entries := files(t, root, ".cache"); len(entries) != 0 {
 		t.Fatal("comparing rows wrote the cache")

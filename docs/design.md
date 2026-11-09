@@ -372,6 +372,13 @@ edits (D21). The whole file must read cleanly before anything is written.
 - A ready function's code answers every call, so its proposals would leave the
   queue at once (D16). Import queues nothing for it and reports only the
   disagreements; keeping the file's answers there takes `--add` or a code fix.
+- Running the code can raise questions of its own: a dependency call nothing
+  answers, or a dependency's unconfirmed answer. Import queues those as
+  `park test` does (D17), however the rows themselves end up.
+- The playground's paste and **Import file…** share this logic
+  (`engine.PlanImport`), with a choice between proposals and examples. Their
+  header is optional: a first row naming any column is read as one; otherwise
+  rows are positional, as in a spreadsheet paste.
 - Cost: proposals for code with fewer than two examples leave the queue once it
   gets its second example, including ones the code disagrees with. Import
   says so.

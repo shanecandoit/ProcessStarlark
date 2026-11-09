@@ -229,7 +229,7 @@ build                             Validate and regenerate park.html
   CA,europe
   $ park import Zones.zone zones.csv
   Read 2 rows for Zones.zone: 1 new, 0 already in the examples, 1 conflicting.
-    conflict, not imported: line 3: Zones.zone("CA") is "north-america" in the examples, "europe" in the file
+    conflict, not imported: line 3: Zones.zone("CA") is "north-america" in the examples, "europe" in the table
   Proposed 1 answer in questions.txt. ...
   ```
 
@@ -237,7 +237,9 @@ build                             Validate and regenerate park.html
   `--add` writes them as examples instead. Rows that contradict an example are
   never imported. If the function has code, each new row is checked against
   it. A ready function's rows are not queued, because its code already answers
-  them; only disagreements are reported.
+  them; only disagreements are reported. If the code calls a dependency that
+  can't answer (say `Zones.zone("ZZ")`), that call is queued as a question,
+  as `park test` does.
 - Flags come before positional operands. Run `park COMMAND --help` for flags.
 - `build` and the `example` commands regenerate `park.html` when they succeed.
   After editing `.star` files by hand, run `park build`. Runtime cache writes
@@ -308,6 +310,11 @@ and the catalog follow the rules on this page. The differences:
   press Enter, click a row to change it, or paste rows from a spreadsheet.
   Each edit is written into the `.star` file as an example line. Cells take
   their column's type, so `US` in a column of text means `"US"`.
+- **Import file…** under each table reads a CSV or TSV file, the playground's
+  `park import`. Pasted and imported rows go in **as examples** (like
+  `--add`) or **as proposals to confirm** (the CLI default). A first row that
+  names the columns may list them in any order; without one, rows hold the
+  inputs, then the output.
 - Questions can be dismissed without answering, which is like deleting the
   line from `questions.txt`.
 - Every run shows "Why this answer", the same tree as `park run --why`.

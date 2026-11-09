@@ -107,6 +107,9 @@ h2 { font-size: 15px; margin: 24px 0 4px; }
 .fn .state.needs { color: var(--warn); }
 .fn .desc { margin: 2px 0 6px; color: var(--muted); font-size: 13.5px; }
 .table-wrap { overflow-x: auto; }
+.importbar { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+.importbar select { padding: 2px 6px; font-size: 13px; }
+.importbar button { padding: 2px 10px; font-size: 13px; }
 table { border-collapse: collapse; font-family: var(--mono); font-size: 13px; }
 th, td { text-align: left; padding: 3px 12px 3px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
 th { color: var(--muted); font-weight: 500; }

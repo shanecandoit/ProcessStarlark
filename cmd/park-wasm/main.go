@@ -84,6 +84,11 @@ func main() {
 	api.Set("pasteExamples", bridge(func(f workspace.Files, a []string) workspace.Result {
 		return workspace.PasteExamples(ctx, f, arg(a, 0), arg(a, 1))
 	}))
+	// importRows(files, fn, text, mode): mode "propose" queues the rows as
+	// proposed answers; anything else adds them as examples.
+	api.Set("importRows", bridge(func(f workspace.Files, a []string) workspace.Result {
+		return workspace.ImportRows(ctx, f, arg(a, 0), arg(a, 1), arg(a, 2) == "propose")
+	}))
 	api.Set("archive", bridge(func(f workspace.Files, _ []string) workspace.Result { return workspace.Archive(f) }))
 	js.Global().Set("park", api)
 	if ready := js.Global().Get("onParkReady"); ready.Type() == js.TypeFunction {

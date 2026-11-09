@@ -4,25 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/shanecandoit/ProcessStarlark/internal/engine"
 	"github.com/shanecandoit/ProcessStarlark/internal/project"
-	"github.com/shanecandoit/ProcessStarlark/internal/samples"
 )
 
 // MaxImportRows bounds one import, so a stray file can't flood the queue.
 const MaxImportRows = 1000
-
-// imported is one new row, with what the function's code says about it.
-type imported struct {
-	row      project.Row
-	call     string
-	code     any    // The code's answer, when ran and err == "".
-	ran      bool   // The function has code and it was run.
-	codeErr  string // Why the code gave no answer.
-	disagree bool
-}
 
 // importRows reads a CSV or TSV table for one function. By default each new
 // row becomes a proposed answer in the question queue, for a person to
@@ -60,110 +48,83 @@ func (c *CLI) importRows(ctx context.Context, p *project.Project, args []string)
 	if len(rows) > MaxImportRows {
 		return fail(2, "%s: %d rows; import at most %d at a time", fs.Arg(1), len(rows), MaxImportRows)
 	}
-
-	// Sort rows against the examples and against each other.
-	var fresh []*imported
-	var conflicts []string
-	known := 0
-	first := map[string]project.Row{}
-	for _, r := range rows {
-		key := samples.Key(r.Input)
-		call := project.CallText(qualified, f, r.Input)
-		if prev, ok := first[key]; ok {
-			if samples.Key(prev.Output) != samples.Key(r.Output) {
-				conflicts = append(conflicts, fmt.Sprintf("%s is %s on line %d, %s on line %d", call, samples.Literal(prev.Output), prev.Line, samples.Literal(r.Output), r.Line))
-			}
-			continue
-		}
-		first[key] = r
-		if existing, ok := f.Index[key]; ok {
-			if samples.Key(existing) == samples.Key(r.Output) {
-				known++
-			} else {
-				conflicts = append(conflicts, fmt.Sprintf("line %d: %s is %s in the examples, %s in the file", r.Line, call, samples.Literal(existing), samples.Literal(r.Output)))
-			}
-			continue
-		}
-		fresh = append(fresh, &imported{row: r, call: call})
+	plan, err := engine.PlanImport(ctx, p, qualified, rows)
+	if err != nil {
+		return err
 	}
-	// A call that two lines answer differently is not imported at all.
-	fresh = dropContested(fresh, rows, first)
-
-	if f.Implemented {
-		if err := compare(ctx, p, qualified, fresh); err != nil {
-			return err
-		}
-	}
-
-	agree, disagree := 0, 0
-	for _, r := range fresh {
-		if r.disagree {
-			disagree++
-		} else if r.ran && r.codeErr == "" {
-			agree++
-		}
-	}
+	raised := plan.Raised
 	report := func() {
-		fmt.Fprintf(c.Out, "Read %d %s for %s: %d new, %d already in the examples, %d conflicting.\n", len(rows), plural(len(rows), "row"), qualified, len(fresh), known, len(conflicts))
-		if f.Implemented && len(fresh) > 0 {
-			fmt.Fprintf(c.Out, "The code agrees with %d new %s and disagrees with %d.\n", agree, plural(agree, "row"), disagree)
+		fmt.Fprintf(c.Out, "Read %d %s for %s: %d new, %d already in the examples, %d conflicting.\n", plan.Rows, plural(plan.Rows, "row"), qualified, len(plan.Fresh), plan.Known, len(plan.Conflicts))
+		if plan.Agree+plan.Disagree > 0 {
+			fmt.Fprintf(c.Out, "The code agrees with %d new %s and disagrees with %d.\n", plan.Agree, plural(plan.Agree, "row"), plan.Disagree)
 		}
-		for _, conflict := range conflicts {
-			fmt.Fprintf(c.Err, "  conflict, not imported: %s\n", conflict)
+		for _, note := range plan.Notes() {
+			fmt.Fprintf(c.Err, "  %s\n", note)
 		}
-		for _, r := range fresh {
-			switch {
-			case r.disagree:
-				fmt.Fprintf(c.Err, "  code disagrees: %s is %s in the file; the code says %s\n", r.call, samples.Literal(r.row.Output), samples.Literal(r.code))
-			case r.codeErr != "":
-				fmt.Fprintf(c.Err, "  code has no answer: %s: %s\n", r.call, r.codeErr)
-			}
+		if len(raised) > 0 {
+			fmt.Fprintf(c.Err, "Queued %d %s the code raised in %s; see park list.\n", len(raised), plural(len(raised), "question"), project.QuestionsFile)
 		}
+	}
+	// queueRaised publishes the code's questions when nothing else is written.
+	queueRaised := func() error {
+		if len(raised) == 0 {
+			return nil
+		}
+		return c.publish(p, nil, raised...)
 	}
 
 	if *add {
-		edits, err := addAll(p, qualified, fresh)
+		edits, err := addAll(p, qualified, plan.Fresh)
 		if err != nil {
 			return err
 		}
-		report()
 		if len(edits) == 0 {
+			if err := queueRaised(); err != nil {
+				return err
+			}
+			report()
 			fmt.Fprintln(c.Out, "Nothing to add.")
 			return nil
 		}
-		if err := c.publish(p, edits); err != nil {
+		if err := c.publish(p, edits, raised...); err != nil {
 			return err
 		}
-		fmt.Fprintf(c.Out, "Added %d %s to %s.\n", len(fresh), plural(len(fresh), "example"), f.Path)
+		report()
+		fmt.Fprintf(c.Out, "Added %d %s to %s.\n", len(plan.Fresh), plural(len(plan.Fresh), "example"), f.Path)
 		return nil
 	}
 
 	// Proposals for a ready function would leave the queue at once: its code
 	// answers every call. Only the disagreements need a decision then.
 	if f.Ready() {
+		if err := queueRaised(); err != nil {
+			return err
+		}
 		report()
 		fmt.Fprintf(c.Out, "%s is ready, so its code already answers these calls and nothing was queued.\n", qualified)
-		if disagree > 0 {
+		if plan.Disagree > 0 {
 			fmt.Fprintf(c.Out, "To keep the file's answers where the code disagrees, fix the code or rerun with --add (examples outrank code).\n")
 		}
 		return nil
 	}
-	var questions []project.Question
-	for _, r := range fresh {
-		q, err := project.NewProposal(p, qualified, r.row.Input, r.row.Output)
-		if err != nil {
+	questions, err := plan.Proposals(p)
+	if err != nil {
+		return err
+	}
+	if len(questions) == 0 {
+		if err := queueRaised(); err != nil {
 			return err
 		}
-		questions = append(questions, q)
-	}
-	report()
-	if len(questions) == 0 {
+		report()
 		fmt.Fprintln(c.Out, "Nothing to propose.")
 		return nil
 	}
-	if err := c.publish(p, nil, questions...); err != nil {
+	// The file's answers go last so they replace any proposal the code made
+	// for the same call.
+	if err := c.publish(p, nil, append(raised, questions...)...); err != nil {
 		return err
 	}
+	report()
 	fmt.Fprintf(c.Out, "Proposed %d %s in %s. Confirm each that is right:\n  park example add '<line>'\n", len(questions), plural(len(questions), "answer"), project.QuestionsFile)
 	if f.Implemented {
 		fmt.Fprintf(c.Out, "Once %s has two examples its code answers these calls, and their proposals leave the queue.\n", qualified)
@@ -171,54 +132,12 @@ func (c *CLI) importRows(ctx context.Context, p *project.Project, args []string)
 	return nil
 }
 
-// dropContested removes new rows whose call appears again in the file with a
-// different answer.
-func dropContested(fresh []*imported, rows []project.Row, first map[string]project.Row) []*imported {
-	contested := map[string]bool{}
-	for _, r := range rows {
-		key := samples.Key(r.Input)
-		if samples.Key(first[key].Output) != samples.Key(r.Output) {
-			contested[key] = true
-		}
-	}
-	kept := fresh[:0]
-	for _, r := range fresh {
-		if !contested[samples.Key(r.row.Input)] {
-			kept = append(kept, r)
-		}
-	}
-	return kept
-}
-
-// compare runs the function's code on each new row, without the cache or
-// resolvers, and notes where it disagrees with the file.
-func compare(ctx context.Context, p *project.Project, qualified string, fresh []*imported) error {
-	e, err := engine.New(p)
-	if err != nil {
-		return err
-	}
-	e.Testing = true
-	for _, r := range fresh {
-		callCtx, cancel := context.WithTimeout(ctx, engine.Timeout)
-		out, err := e.Run(callCtx, qualified, r.row.Input)
-		cancel()
-		r.ran = true
-		if err != nil {
-			r.codeErr = firstLine(err.Error())
-			continue
-		}
-		r.code = out
-		r.disagree = samples.Key(out) != samples.Key(r.row.Output)
-	}
-	return nil
-}
-
 // addAll writes each new row as an example in the function's module.
-func addAll(p *project.Project, qualified string, fresh []*imported) (map[string][]byte, error) {
+func addAll(p *project.Project, qualified string, fresh []*engine.ImportRow) (map[string][]byte, error) {
 	edits := map[string][]byte{}
 	cur := p
 	for _, r := range fresh {
-		path, b, err := project.AddExample(cur, qualified, r.row.Input, r.row.Output)
+		path, b, err := project.AddExample(cur, qualified, r.Row.Input, r.Row.Output)
 		if err != nil {
 			return nil, err
 		}
@@ -246,11 +165,4 @@ func plural(n int, word string) string {
 		return word
 	}
 	return word + "s"
-}
-
-func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
-	}
-	return s
 }

@@ -33,3 +33,23 @@ func TestCellTypes(t *testing.T) {
 		t.Error("empty cell accepted")
 	}
 }
+
+func TestReadRowsHeaderOrPositional(t *testing.T) {
+	p, err := FromFiles("", map[string][]byte{"z.star": []byte("Process Z:\n    example: zone(\"US\") == \"domestic\"\n\n    def zone(country):\n        pass\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, f, err := p.Function("Z.zone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"DE,international\nFR,international\n", "RESULT\tcountry\ninternational\tDE\ninternational\tFR\n"} {
+		rows, err := ReadRows(f, text)
+		if err != nil || len(rows) != 2 || rows[0].Input["country"] != "DE" || rows[1].Output != "international" {
+			t.Errorf("ReadRows(%q) = %+v, %v", text, rows, err)
+		}
+	}
+	if _, err := ReadRows(f, "DE\n"); err == nil {
+		t.Error("a short positional row was accepted")
+	}
+}
