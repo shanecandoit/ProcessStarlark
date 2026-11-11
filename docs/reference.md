@@ -7,12 +7,12 @@ in the [implementation plan](../plan.md).
 ## Core concepts
 
 - **Process:** a stateless namespace of functions and examples, such as
-  `RomanParse`. Each process is one `.star` module.
+  `WordAdd`. Each process is one `.star` module.
 - **Function:** takes one or more named inputs and returns one output value.
   It's either *implemented* (it has a Starlark body) or *example-only*
   (`def f(x): pass`).
 - **Example:** a call and its expected answer, such as
-  `example: parse("ix") == 9`. Examples are authoritative. All examples in a
+  `example: eval("one plus two") == 3`. Examples are authoritative. All examples in a
   project form one set, wherever they are written.
 - **Readiness:** an implemented function is *ready* once it has two or more
   distinct examples. Until then it shows as `needs examples`, and its code
@@ -57,8 +57,9 @@ the implementation must handle those cases too for the tests to pass.
 A project is a flat directory of `.star` modules:
 
 ```text
-roman_parse.star    # Process RomanParse: code and examples
-roman_add.star      # Process RomanAdd
+word_values.star    # Process WordValues: example-only word meanings
+number_words.star   # Process NumberWords: number structure
+word_add.star       # Process WordAdd: addition
 .cache/             # Disposable computed results (canonical JSON); safe to delete
 park.html           # Generated offline catalog
 ```
@@ -72,27 +73,21 @@ Write one `Process Name:` block per `.star` file, with everything inside it
 indented:
 
 ```python
-Process RomanParse:
-    """Convert lowercase Roman numerals using i, v, and x."""
+Process WordAdd:
+    """Add two English numbers, as in twenty-two plus eleven."""
 
-    example: parse("ix") == 9
-    example: parse("vi") == 6
-    example: tokenize("ix + vi") == ["ix", "+", "vi"]
+    example: eval("one plus two") == 3
+    example: eval("twenty plus zero") == 20
 
-    def parse(text):
-        """Parse a lowercase Roman numeral."""
-        digits = {"i": 1, "v": 5, "x": 10}
-        value = 0
-        previous = 0
-        for index in range(len(text) - 1, -1, -1):
-            digit = digits[text[index]]
-            value += -digit if digit < previous else digit
-            previous = digit
-        return value
-
-    def tokenize(text):
-        """An example-only token vocabulary."""
-        pass
+    def eval(text):
+        """Two numbers separated by plus; ignore capitals and extra whitespace."""
+        words = text.lower().split()
+        if len(words) != 3 or words[1] != "plus":
+            fail("expected two number words separated by plus, such as twenty-two plus eleven")
+        left = NumberWords.parse(words[0])
+        right = NumberWords.parse(words[2])
+        total = left + right
+        return total
 ```
 
 - A Process holds a docstring, `example:` lines, and function definitions.
@@ -100,8 +95,8 @@ Process RomanParse:
   evolving state as an input and return its replacement. Nested Process blocks
   are unsupported.
 - `Process` is optional. A plain `.star` file with top-level functions and
-  `example:` lines is a process named after the file: `roman_parse.star`
-  becomes `RomanParse`. Plain files may also define literal constants.
+  `example:` lines is a process named after the file: `word_add.star`
+  becomes `WordAdd`. Plain files may also define literal constants.
 - Docstrings become descriptions in the catalog.
 - Public functions are exported. Names beginning with `_` are private helpers,
   called by their bare names.
@@ -126,7 +121,7 @@ Process RomanParse:
   Their output is named `result`.
 
 Names are identifiers and can't be Starlark keywords, so `in` is not a valid
-name. Choose names that say what the value is (`text`, `numeral`, `tokens`).
+name. Choose names that say what the value is (`text`, `word`, `total`).
 Renaming the returned variable renames the output in the catalog. Renaming or
 reordering parameters changes how examples' positional arguments line up, so
 update examples with the code.
@@ -134,9 +129,9 @@ update examples with the code.
 ### Examples
 
 ```python
-example: parse("ix") == 9                     # positional
+example: parse("eleven") == 11                # positional
 example: add(left=9, right=6) == 15           # named, in any order
-example: RomanParse.parse("xii") == 12        # a function in another process
+example: WordValues.value("twelve") == 12     # a function in another process
 example: route({"component": "login", "labels": ["bug"]}) == "auth"
 ```
 
@@ -160,12 +155,12 @@ example: route({"component": "login", "labels": ["bug"]}) == "auth"
 
 ### Calls between processes
 
-Call another process with `RomanParse.parse(text)`. Park detects these
+Call another process with `NumberWords.parse(text)`. Park detects these
 references as dependencies; there is nothing to declare, and dependency cycles
 are rejected. Build validation rejects direct references to missing or private
 members of process namespaces, even in functions that aren't run. Ordinary
 methods on input values and local variables are unaffected. Within a process,
-both `parse(text)` and `RomanParse.parse(text)`
+both `parse(text)` and `NumberWords.parse(text)`
 use example-aware dispatch and enforce readiness. Callers can pass inputs by
 position or by name: `Math.add(9, 6)` and `Math.add(right=6, left=9)` are the
 same call and share examples and cached results.
@@ -178,10 +173,10 @@ on `load()`, top-level execution, and supported value types.
 ```sh
 park init my-project
 cd my-project
-# Write roman_parse.star with `def parse(text): pass`, then:
-park example add 'RomanParse.parse("ix") == 9'
-park example add 'RomanParse.parse("vi") == 6'
-park run 'RomanParse.parse("ix")'
+# Write word_values.star with `def value(word): pass`, then:
+park example add 'WordValues.value("eleven") == 11'
+park example add 'WordValues.value("two") == 2'
+park run 'WordValues.value("eleven")'
 park list
 ```
 
@@ -200,16 +195,19 @@ build                             Validate and regenerate park.html
 
 - Calls are one Starlark expression with literal arguments. Quote the whole
   call for the shell: `park run 'Math.add(9, right=6)'`.
-- Output is printed as a Starlark literal, such as `["ix", "+", "vi"]`.
+- Output is printed as a Starlark literal, such as `33` or `["twenty-two", "plus", "eleven"]`.
 - `run --why` also prints every call the answer depended on, indented by
   depth, with where each answer came from:
 
   ```text
-  $ park run --why 'RomanAdd.eval("ix + i")'
-  10
-    RomanAdd.eval(text="ix + i") = 10  code     roman_add.star:11
-      RomanParse.parse(text="ix") = 9  example  roman_parse.star:4
-      RomanParse.parse(text="i") = 1   code     roman_parse.star:9
+  $ park run --why 'WordAdd.eval("twenty-two plus eleven")'
+  33
+    WordAdd.eval(text="twenty-two plus eleven") = 33  code     word_add.star:7
+      NumberWords.parse(text="twenty-two") = 22       code     number_words.star:7
+        WordValues.value(word="twenty") = 20          example  word_values.star:24
+        WordValues.value(word="two") = 2              example  word_values.star:6
+      NumberWords.parse(text="eleven") = 11           code     number_words.star:7
+        WordValues.value(word="eleven") = 11          example  word_values.star:15
   ```
 
   Sources are `example`, `code`, `unconfirmed code`, `unknown` (the call
@@ -220,7 +218,8 @@ build                             Validate and regenerate park.html
   that module's last example. `example remove` deletes the example wherever it
   is written.
 - `import` reads a CSV or TSV file whose first row names the function's
-  inputs and output, in any order:
+  inputs and output, in any order. For example, in the shipping sample
+  (`examples/shipping/`):
 
   ```text
   $ cat zones.csv
@@ -257,11 +256,11 @@ Park queues two kinds of question in `questions.txt`.
 **Unanswered calls.** No example matches and there's no code:
 
 ```text
-$ park run 'Shipping.quote("JP", 800)'
-park: no answer for Zones.zone(country="JP"); added to questions.txt
+$ park run 'WordAdd.eval("twenty-two plus twelve")'
+park: no answer for WordValues.value(word="twelve"); added to questions.txt
 Answer it with an example:
-  park example add 'Zones.zone("JP") == ...'
-or implement Zones.zone with at least two distinct examples.
+  park example add 'WordValues.value("twelve") == ...'
+or implement WordValues.value with at least two distinct examples.
 ```
 
 **Proposed answers.** The code answered, but the function has fewer than two
@@ -304,8 +303,12 @@ and the catalog follow the rules on this page. The differences:
 - The project lives in the browser: saved locally, and shareable as a link
   that holds every file.
 - There's no `.cache/`; every call is computed fresh.
-- A guided tour (**Tour**, or a `#tour=shipping` link) walks through the
-  shipping sample as Ops and as a developer. It opens on a first visit.
+- Word-number addition is the default sample. A guided tour (**Tour**, or a
+  `#tour=addition` link) introduces word meanings as examples and composition
+  as code. It opens on a first visit; saved projects and tour progress win
+  over the default. The `#tour=shipping` link still opens the business tour.
+- Roman numerals remain in the sample picker and `fixtures/roman/`; use
+  `park --root fixtures/roman ...` to select them in the CLI.
 - Function tables are editable (D21). Type a row in the blank last row and
   press Enter, click a row to change it, or paste rows from a spreadsheet.
   Each edit is written into the `.star` file as an example line. Cells take

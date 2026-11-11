@@ -1,12 +1,13 @@
 # Sample projects
 
-Three small Park projects for three kinds of users. Each one is a folder in
+Four small Park projects for different kinds of users. Each one is a folder in
 [`examples/`](../examples) that passes `park test`; a test keeps the code on
 this page identical to those files. Each also has a place where
 an unknown input stops Park, and someone answers it once to teach it.
 
 | Project | For | Shows |
 |---|---|---|
+| [Number-word addition](#number-words-addition) (`examples/word-addition`) | anyone trying Park | vocabulary as examples, composition as code, one new row reused |
 | [Robot on a grid](#game-robot-on-a-grid) (`examples/robot`) | people learning to code | state in, state out; a vocabulary that grows |
 | [Shipping quotes](#business-shipping-quotes) (`examples/shipping`) | operations and the developers they work with | a rule table owned by non-programmers, code owned by developers |
 | [Shapes on a grid](#geometry-shapes-on-a-grid) (`examples/shapes`) | teachers and students | examples as worked answers, checked against code |
@@ -15,6 +16,143 @@ To try one, `cd` into its folder, run `park build` to generate `park.html`,
 then try the commands shown. Answering questions edits the example's files;
 `git checkout examples` resets them. See the [reference](reference.md) for the
 format.
+
+## Number words: addition
+
+The default project evaluates `"twenty-two plus eleven"` as `33`. Word meanings
+are authored answers: eleven means 11 because a row says so. Structural rules
+combine those meanings. There is no code synthesis or statistical inference.
+
+The grammar is intentionally small: one English number from 0 to 99, the word
+"plus," then another number from 0 to 99. Compounds use one hyphen, as in
+`twenty-two`. Capitals and extra whitespace around "plus" are ignored. The
+sum may exceed 99. Digits, negatives, hundreds, "and," other operators, and
+unhyphenated compounds are outside this sample's grammar.
+
+`word_values.star` is the vocabulary table. It stays example-only. Twelve is
+deliberately missing to make the question-and-answer flow easy to try:
+
+```python
+Process WordValues:
+    """Number words and their meanings. Each row is an answer, not a parsing rule."""
+
+    example: value("zero") == 0
+    example: value("one") == 1
+    example: value("two") == 2
+    example: value("three") == 3
+    example: value("four") == 4
+    example: value("five") == 5
+    example: value("six") == 6
+    example: value("seven") == 7
+    example: value("eight") == 8
+    example: value("nine") == 9
+    example: value("ten") == 10
+    example: value("eleven") == 11
+    # Twelve is deliberately missing: answer Park's question to add it.
+    example: value("thirteen") == 13
+    example: value("fourteen") == 14
+    example: value("fifteen") == 15
+    example: value("sixteen") == 16
+    example: value("seventeen") == 17
+    example: value("eighteen") == 18
+    example: value("nineteen") == 19
+    example: value("twenty") == 20
+    example: value("thirty") == 30
+    example: value("forty") == 40
+    example: value("fifty") == 50
+    example: value("sixty") == 60
+    example: value("seventy") == 70
+    example: value("eighty") == 80
+    example: value("ninety") == 90
+
+    def value(word):
+        """Example-only vocabulary. An unfamiliar word becomes a question."""
+        pass
+```
+
+`number_words.star` supplies the structural rule. Only a tens value from
+20 through 90 followed by a unit from 1 through 9 can form a compound;
+`eleven-two` and `twenty-zero` are errors. An unfamiliar word in an otherwise
+valid position becomes a question for the vocabulary table.
+
+```python
+Process NumberWords:
+    """Read an English number from 0 to 99, using a table of word meanings."""
+
+    example: parse("one") == 1
+    example: parse("thirty-three") == 33
+
+    def parse(text):
+        """A single word, or a hyphenated tens word followed by a unit."""
+        parts = text.strip().lower().split("-")
+        if len(parts) > 2:
+            fail("expected a word or a tens-units number such as twenty-two")
+        for part in parts:
+            if not part or not part.isalpha():
+                fail("expected number words joined by a single hyphen")
+        if len(parts) == 1:
+            value = WordValues.value(parts[0])
+        else:
+            tens = WordValues.value(parts[0])
+            if type(tens) != "int" or tens < 20 or tens > 90 or tens % 10 != 0:
+                fail("the first word must mean twenty, thirty, ..., or ninety")
+            units = WordValues.value(parts[1])
+            if type(units) != "int" or units < 1 or units > 9:
+                fail("the second word must mean one through nine")
+            value = tens + units
+        if type(value) != "int" or value < 0 or value > 99:
+            fail("expected a whole number from 0 to 99")
+        return value
+```
+
+`word_add.star` supplies the addition rule. Its two examples check known
+expressions; the default expression is deliberately different so a normal
+run executes the code and exposes its nested calls.
+
+```python
+Process WordAdd:
+    """Add two English numbers, as in twenty-two plus eleven."""
+
+    example: eval("one plus two") == 3
+    example: eval("twenty plus zero") == 20
+
+    def eval(text):
+        """Two numbers separated by plus; ignore capitals and extra whitespace."""
+        words = text.lower().split()
+        if len(words) != 3 or words[1] != "plus":
+            fail("expected two number words separated by plus, such as twenty-two plus eleven")
+        left = NumberWords.parse(words[0])
+        right = NumberWords.parse(words[2])
+        total = left + right
+        return total
+```
+
+Try it from `examples/word-addition/`, or from the repository root, which
+starts with the same three files:
+
+```sh
+park test
+park run 'WordValues.value("eleven")'                    # 11, from an example
+park run --why 'WordAdd.eval("twenty-two plus eleven")'  # 33, composed by code
+park run 'WordAdd.eval("twenty-two plus twelve")'        # unresolved: WordValues.value(word="twelve")
+park example add 'WordValues.value("twelve") == 12'
+park run 'WordAdd.eval("twenty-two plus twelve")'        # 34
+park run 'WordAdd.eval("twelve plus two")'               # 14: the same new row is reused
+park run 'WordAdd.eval("ninety-nine plus one")'          # 100
+park test
+```
+
+In the browser, use the default Word-number addition sample or the
+[addition tour](https://shanecandoit.github.io/ProcessStarlark/#tour=addition).
+Answering a question reruns the last expression automatically; the CLI
+requires the explicit rerun shown above.
+
+A whole-expression example would answer that exact call directly, skipping
+its calculation at runtime. `park test` checks the implementation separately,
+bypassing the checked function's own examples. Example-only vocabulary rows
+are reported as data, not as implementation checks. Two examples make code
+ready under Park's current policy; they do not prove correctness for every
+possible input.
 
 ## Game: robot on a grid
 

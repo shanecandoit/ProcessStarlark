@@ -16,6 +16,7 @@ import (
 
 // Sample projects shown in the playground's picker, in order.
 var projects = []struct{ Name, Dir, Call string }{
+	{"Word-number addition", "examples/word-addition", `WordAdd.eval("twenty-two plus eleven")`},
 	{"Shipping quotes", "examples/shipping", `Shipping.quote("DE", 800)`},
 	{"Roman numerals", "fixtures/roman", `RomanParse.parse("xiv")`},
 	{"Robot on a grid", "examples/robot", `Robot.walk([0, 0], ["right", "down"])`},

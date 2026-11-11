@@ -30,7 +30,7 @@ Usage: park [--root PATH] COMMAND [FLAGS] [OPERANDS]
   test [P.fn]                       Check examples against implementations
   build                             Validate and regenerate park.html
 
-Calls use Starlark literals: 'Math.add(9, right=6)', 'RomanParse.parse("ix")'.
+Calls use Starlark literals: 'Math.add(9, right=6)', 'WordAdd.eval("twenty-two plus eleven")'.
 Use park COMMAND --help for flags. Flags precede positional operands.
 `
 

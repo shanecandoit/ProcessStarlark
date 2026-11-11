@@ -519,10 +519,16 @@ function edited() {
   loadTimer = setTimeout(() => call("load"), 300);
 }
 
-function loadProject({ files, call: callText = "", active = "", sample = 0 }) {
+function loadProject({ files, call: callText = "", active = "", sample = 0, sampleName }) {
   state.files = { ...files };
   state.active = active in files ? active : Object.keys(files).filter((n) => n.endsWith(".star")).sort()[0] || "";
-  state.sample = sample === TOUR_SAMPLE || (Number.isInteger(sample) && sample < globalThis.PARK_SAMPLES.length) ? sample : -1;
+  // Older saves used picker positions. Keep Reset tied to the original
+  // sample when new projects are inserted into the picker.
+  if (Number.isInteger(sample) && sample >= 0) {
+    const name = sampleName ?? ["Shipping quotes", "Roman numerals", "Robot on a grid", "Shapes"][sample];
+    sample = globalThis.PARK_SAMPLES.findIndex((s) => s.name === name);
+  }
+  state.sample = sample === TOUR_SAMPLE || (Number.isInteger(sample) && sample >= 0 && sample < globalThis.PARK_SAMPLES.length) ? sample : -1;
   state.lastCall = callText;
   state.fresh = new Set();
   state.editing = null;
@@ -538,7 +544,7 @@ function loadProject({ files, call: callText = "", active = "", sample = 0 }) {
 function loadSample(i) {
   endTour();
   const s = globalThis.PARK_SAMPLES[i];
-  return loadProject({ files: s.files, call: s.call, sample: i });
+  return loadProject({ files: s.files, call: s.call, sample: i, sampleName: s.name });
 }
 
 function selectView(view) {
@@ -556,7 +562,7 @@ async function runTests() {
 // ---- Saving, sharing, downloading -----------------------------------------
 
 function saved() {
-  return { files: state.files, call: $("call").value, active: state.active, sample: state.sample };
+  return { files: state.files, call: $("call").value, active: state.active, sample: state.sample, sampleName: globalThis.PARK_SAMPLES[state.sample]?.name };
 }
 
 // save writes immediately: a project is a few kilobytes, and a debounced save

@@ -15,17 +15,19 @@ never overrides an example, and Park checks that the two agree. When a case
 comes up that neither covers, Park doesn't guess: it asks the people who own
 the rule, and their answer becomes a new example.
 
-**Try it in your browser: <https://shanecandoit.github.io/ProcessStarlark/>**, with nothing to install. The shipping
-sample walks through a question and its answer, and a [two-minute guided
-tour](https://shanecandoit.github.io/ProcessStarlark/#tour=shipping) plays it
-as the two people involved.
+**Try it in your browser: <https://shanecandoit.github.io/ProcessStarlark/>**, with nothing to install. The default
+sample adds number words: "twenty-two plus eleven" becomes `33`. A
+[short guided tour](https://shanecandoit.github.io/ProcessStarlark/#tour=addition)
+shows how one new word meaning unlocks more expressions. The
+[shipping tour](https://shanecandoit.github.io/ProcessStarlark/#tour=shipping)
+shows the handoff between a business user and a developer.
 
 - **For business teams and buyers:** [Park for business teams](docs/for-business.md)
   walks through a shipping-quote example and compares Park with specs,
   spreadsheets, rules engines, and low-code tools.
 - **For programmers:** read on, then see [Why Park?](docs/why-park.md).
 
-## How it works: Roman numerals
+## How it works: number words and addition
 
 A function turns an input into an output. In most programming languages, you
 have to write the code before the function does anything. In Park, you can
@@ -35,51 +37,68 @@ already works as a function.
 **1. Write down answers you know.** Each example is a call and its answer:
 
 ```python
-Process RomanParse:
-    example: parse("ix") == 9
-    example: parse("vi") == 6
+Process WordValues:
+    example: value("twenty") == 20
+    example: value("two") == 2
+    example: value("eleven") == 11
 
-    def parse(text):
+    def value(word):
         pass
 ```
 
-`def parse(text): pass` declares a function with no code yet. Its examples are
-all it knows.
+`def value(word): pass` declares an example-only function. These rows already
+answer calls. Eleven's meaning is vocabulary, so it can stay an example;
+there is no need to invent a general rule for deriving `11` from its spelling.
 
-**2. Ask Park a question.** Ask about `ix`, and Park looks up your example and
-answers `9`. Ask about `xiv`, and Park says it doesn't know yet. It never
-guesses.
+**2. Use code for structure.** The runnable project has three functions:
 
-**3. Teach it a rule.** Replace `pass` with code in
-[Starlark](https://github.com/bazelbuild/starlark), a simplified version of
-Python:
+| Function | Its job |
+|---|---|
+| `WordValues.value(word)` | Look up a saved word meaning, such as `"eleven" → 11`. |
+| `NumberWords.parse(text)` | Read a single word or combine a valid tens-and-units form: `"twenty-two" → 20 + 2`. |
+| `WordAdd.eval(text)` | Split around "plus," parse the two numbers, and add them. |
+
+The addition rule is written in
+[Starlark](https://github.com/bazelbuild/starlark), a simplified version of Python:
 
 ```python
-Process RomanParse:
-    example: parse("ix") == 9
-    example: parse("vi") == 6
+Process WordAdd:
+    example: eval("one plus two") == 3
+    example: eval("twenty plus zero") == 20
 
-    def parse(text):
-        digits = {"i": 1, "v": 5, "x": 10}
-        value = 0
-        previous = 0
-        for index in range(len(text) - 1, -1, -1):  # read right to left
-            digit = digits[text[index]]
-            value += -digit if digit < previous else digit  # "iv" means 5 - 1
-            previous = digit
-        return value
+    def eval(text):
+        words = text.lower().split()
+        if len(words) != 3 or words[1] != "plus":
+            fail("expected two number words separated by plus")
+        left = NumberWords.parse(words[0])
+        right = NumberWords.parse(words[2])
+        total = left + right
+        return total
 ```
 
-The names in the code are the names in the examples: `parse` takes `text` and
-returns `value`, so its signature is `parse(text) value`. Every `return` hands
+The names in the code are the names in the examples: `eval` takes `text` and
+returns `total`, so its signature is `eval(text) total`. Every `return` hands
 back a named variable for that reason.
 
-`Process RomanParse:` is a stateless namespace for organizing functions. Think
+`Process WordAdd:` is a stateless namespace for organizing functions. Think
 of it as a class with just a name, functions, and examples: no class features
-or shared state. Callers use `RomanParse.parse("ix")`. Plain `.star` files with
-top-level functions work too; the file name supplies the process name.
+or shared state. Callers use `WordAdd.eval("twenty-two plus eleven")`. Plain
+`.star` files with top-level functions work too; the file name supplies the
+process name.
 
-Now `xiv` gives `14`. Your examples are still in charge:
+**3. Fill a gap once.** The sample deliberately leaves out twelve. Run
+`WordAdd.eval("twenty-two plus twelve")` and Park asks for
+`WordValues.value("twelve")`. Answer `12`, and rerun: the result is `34`.
+`WordAdd.eval("twelve plus two")` now gives `14` too. One new row works
+wherever the code needs that word meaning.
+
+The small language accepts English operands from 0 to 99, with compounds
+hyphenated, joined by "plus." Capitals and extra whitespace are ignored. The
+sum can exceed 99. This is a deterministic parser using explicit vocabulary,
+not a model inferring rules from examples. See the
+[full example and commands](docs/ideas-sample-projs.md#number-words-addition).
+
+Your examples are still in charge:
 
 - When a call matches an example, Park answers with the example, even after
   the code exists.
@@ -91,6 +110,11 @@ Now `xiv` gives `14`. Your examples are still in charge:
   proposed example, and you confirm the ones that are right. Write code first
   and the examples follow. `park run` doesn't run the tests for you; use
   `park test`.
+
+If the entire expression has a saved example, a normal run returns that answer
+directly; it doesn't execute the nested calculation. `park test` bypasses that
+function's own examples to check its implementation. The default expression
+has no whole-expression example, so `--why` shows the composition.
 
 ## Why use it?
 
@@ -118,11 +142,13 @@ Or, in a clone of this repository, run:
 go build -o park ./cmd/park
 ./park build                                          # generate park.html
 ./park test                                           # code vs. examples
-./park run 'RomanParse.parse("ix")'                   # 9, from an example
-./park run 'RomanParse.parse("xiv")'                  # 14, from the code
-./park run 'RomanAdd.eval("ix + vi")'                 # 15, from an example
-./park run 'RomanAdd.eval("iv + i")'                  # 5, from the code
-./park run --why 'RomanAdd.eval("ix + i")'            # 10, and where each part came from
+./park run 'WordValues.value("eleven")'               # 11, from an example
+./park run 'NumberWords.parse("twenty-two")'          # 22, from code using examples
+./park run 'WordAdd.eval("twenty-two plus eleven")'   # 33
+./park run --why 'WordAdd.eval("twenty-two plus eleven")'
+./park run 'WordAdd.eval("twenty-two plus twelve")'   # asks what twelve means
+./park example add 'WordValues.value("twelve") == 12'
+./park run 'WordAdd.eval("twenty-two plus twelve")'   # 34
 ```
 
 Then open `park.html` in this folder to see every function and its examples.
@@ -131,10 +157,13 @@ To try Park in a browser instead, run `sh serve.sh` and open
 <http://localhost:8000>. The hosted copy at <https://shanecandoit.github.io/ProcessStarlark/> is rebuilt on
 every push to `main` by [.github/workflows/pages.yml](.github/workflows/pages.yml). The playground runs the same engine, compiled to
 WebAssembly: edit the samples, run calls, and answer Park's questions inline.
-The root Roman demo is two files, `roman_parse.star` and `roman_add.star`, each
-holding its code and examples. A separate copy in `fixtures/roman/` is
-available for tests and experimentation; select it with `--root fixtures/roman`
-before the command.
+The root demo is three files: `word_values.star` for vocabulary,
+`number_words.star` for number structure, and `word_add.star` for addition.
+A clean copy lives in `examples/word-addition/` and is bundled as the first
+playground sample and the first-visit tour. Roman numerals remain available
+in the sample picker and in `fixtures/roman/`; use `--root fixtures/roman`
+before the CLI command to try them. Saved browser projects and tour progress
+still take precedence over the first-visit default.
 
 ## Learn more
 
@@ -143,12 +172,14 @@ before the command.
 - [Why Park?](docs/why-park.md): how Park compares with other languages.
 - [Reference](docs/reference.md): file formats, commands, and the exact rules.
 - [Design decisions](docs/design.md): what was decided and why.
-- [Sample projects](docs/ideas-sample-projs.md): a game, a business tool, and
-  geometry, each runnable from [`examples/`](examples).
+- [Sample projects](docs/ideas-sample-projs.md): word-number addition, a game,
+  a business tool, and geometry, each runnable from [`examples/`](examples).
 - [Implementation plan](plan.md): the full contract.
 - [Browser playground](docs/plan-web-playground.md): how the playground is
   built, and what's next for it. [Guided tours](docs/plan-guided-tours.md) are
-  planned next.
+  available for addition and shipping.
+- [Treemap visualizer plan](docs/plan-treemap-visualizer.md): an open design
+  exploration for explaining answers with nested rectangles.
 - [Direction](docs/ideas-direction.md): where Park goes next.
 
 **Status:** early. The command-line tool and the browser playground work end to

@@ -1,6 +1,8 @@
 # Plan: browser playground
 
-Status: phases 1 and 2 done, phase 3 started (Why view), 2026-11-06. Direction:
+Status: phases 1 and 2 done, phase 3 includes Why view and guided tours,
+2026-11-10. Word-number addition is the default sample and first-visit tour.
+Direction:
 [ideas-direction.md](ideas-direction.md).
 
 Run it locally from the repository root:
@@ -87,7 +89,8 @@ tests. `cmd/park-wasm` is a thin `syscall/js` bridge over it.
 - `web/`: a single page with a file list, a text editor (plain `<textarea>`),
   a call box, an output pane, a questions panel with inline answers and
   confirm buttons, a test button, and the rendered catalog in an iframe.
-- Bundled examples (Roman numerals, robot, shipping, shapes) in a picker.
+- Bundled examples (word-number addition, shipping, Roman numerals, robot,
+  shapes) in a picker.
 - Answering a question reruns the last call, a first cut of fill-and-resume.
 - `web/build.sh` builds `web/dist/`: the page, `park.wasm`, Go's
   `wasm_exec.js`, and `samples.js` (written by `cmd/playground-build`).
@@ -123,21 +126,25 @@ tests. `cmd/park-wasm` is a thin `syscall/js` bridge over it.
 - **Why view: done.** Every run shows the `--why` tree (D20) under the
   answer, with sources coloured and each location opening the file at that
   line. `workspace.Run` always records it and returns it as `why`.
+- **Nested visual explanations: design exploration only.** Compare treemap,
+  icicle, nested-frame, and text layouts before selecting an implementation.
+  See [the treemap visualizer plan](plan-treemap-visualizer.md).
 - **Fill-and-resume:** answer the innermost question in place and the
   original call reruns automatically (ideas #5). A first cut exists: answering
   any question reruns the last call. Next: show the chain of questions one
   call raises, and answer them in order.
-- **Guided tours:** planned in [plan-guided-tours.md](plan-guided-tours.md).
+- **Guided tours:** built; see [plan-guided-tours.md](plan-guided-tours.md).
   Tours are data (JSON steps with goals and skips), checked at build time by
-  replaying them through the engine. The first tour is the shipping story with
-  two roles, Ops and the developer.
+  replaying them through the engine. Word-number addition is the first-visit
+  tour; shipping tells the story with two roles, Ops and the developer.
 - **Function tables:** done early, in phase 1. Each function is a table with
   inputs as columns and the output last; rows added by an answer are
   highlighted, and each row can be removed.
 - **Hosting: set up.** `.github/workflows/pages.yml` runs the tests, builds
   `web/dist`, and deploys it to GitHub Pages on every push to `main`
   (`web/dist` stays out of git). It needs Pages' source set to "GitHub
-  Actions" once. The shipping sample now comes first, for business visitors.
+  Actions" once. The word-number addition sample now comes first; shipping
+  and Roman numerals remain available in the picker.
   Live at <https://shanecandoit.github.io/ProcessStarlark/>, linked from the README.
 
 ## Non-goals

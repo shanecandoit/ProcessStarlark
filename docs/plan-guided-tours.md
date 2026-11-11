@@ -1,9 +1,11 @@
 # Plan: guided tours in the playground
 
-Status: phases 1 and 2 built, 2026-11-06, with one tour
-([web/tours/shipping.json](../web/tours/shipping.json)). Part of the
+Status: phases 1 and 2 built, updated 2026-11-10, with two tours:
+[word-number addition](../web/tours/addition.json) and
+[shipping](../web/tours/shipping.json). Part of the
 playground's phase 3 ([plan-web-playground.md](plan-web-playground.md)).
-Try it: <https://shanecandoit.github.io/ProcessStarlark/#tour=shipping>.
+The default first-visit tour is
+<https://shanecandoit.github.io/ProcessStarlark/#tour=addition>.
 
 ## Goal
 
@@ -13,7 +15,12 @@ becomes a question instead of a guess, the answer resumes the call, and "why"
 traces the result back to the person who wrote each part. No install, no
 explanation from us.
 
-The first tour is the shipping story, told with two roles: **Ops**, who owns
+The default tour introduces number-word addition: eleven is an authored word
+meaning, a rule composes twenty and two, and adding the missing meaning of
+twelve unlocks several expressions. It starts with a call that has no exact
+whole-expression example, so its Why tree shows the nested computation.
+
+The shipping story is told with two roles: **Ops**, who owns
 the zone table, and the **developer**, who writes the pricing rule. The
 handoff between them is the product, so the tour switches between them.
 
@@ -192,7 +199,10 @@ goal cases tests both.
 3. **For developers: delete your requirements doc.** Turn a ticket's
    acceptance criteria into examples, write the rule, and watch the questions
    show which cases the ticket never decided.
-4. **Roman numerals:** the README's walkthrough, for programmers.
+4. **Words, examples, and a little addition** (7 steps; built, default):
+   run twenty-two plus eleven, inspect its provenance, encounter the missing
+   twelve meaning, answer it once, and reuse the new row in twelve plus two.
+   The former Roman-numeral walkthrough remains available as a sample.
 
 ## Phases
 

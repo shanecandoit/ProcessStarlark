@@ -172,8 +172,9 @@ with it, but nothing should close it off. Constraints that keep the door open:
 What a business team would need before using Park day to day, roughly in
 order. None of it is built; the engine is.
 
-1. **Hosted playground** with the shipping sample first, as the thing to send
-   people. (The Pages workflow publishes it; the sample is already first.)
+1. **Hosted playground** with word-number addition first, as the thing to
+   send people. The addition tour introduces examples and rules; shipping
+   remains the business handoff demo. (The Pages workflow publishes it.)
 2. **A table editor for examples and questions,** so rule owners never see
    source files. Started: playground tables are editable, and spreadsheet
    rows can be pasted in (D21). Next: a view with only tables and questions,

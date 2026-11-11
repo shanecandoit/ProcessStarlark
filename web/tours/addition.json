@@ -1,0 +1,48 @@
+{
+  "id": "addition",
+  "title": "Words, examples, and a little addition",
+  "start": "examples/word-addition",
+  "steps": [
+    {
+      "text": "Eleven means 11 because someone wrote that answer in a table. Code handles the structure of twenty-two and adds numbers together. This project uses both: editable examples for word meanings, and rules for combining them.",
+      "call": "WordAdd.eval(\"twenty-two plus eleven\")",
+      "open": "word_values.star",
+      "point": ["function:WordValues.value", "editor"]
+    },
+    {
+      "text": "Press Run to work out twenty-two plus eleven. This whole expression has no saved example, so the code must combine the smaller answers.",
+      "call": "WordAdd.eval(\"twenty-two plus eleven\")",
+      "point": ["run"],
+      "goal": {"ran": "WordAdd.eval(\"twenty-two plus eleven\")", "status": "ok", "output": "33"},
+      "skip": [{"run": "WordAdd.eval(\"twenty-two plus eleven\")"}]
+    },
+    {
+      "text": "Why this answer shows the calculation using the saved meanings of twenty, two, and eleven. Click a location to find its example or code. Eleven's meaning is one answer; combining tens and units is a rule.",
+      "point": ["why"]
+    },
+    {
+      "text": "Now change eleven to twelve and press Run. Twelve was deliberately left out of the word table, so Park asks for that one missing meaning.",
+      "call": "WordAdd.eval(\"twenty-two plus twelve\")",
+      "point": ["run"],
+      "goal": {"question": "WordValues.value(\"twelve\")"},
+      "skip": [{"run": "WordAdd.eval(\"twenty-two plus twelve\")"}]
+    },
+    {
+      "text": "Answer the question with 12. Park saves your answer as an example and reruns the expression, producing 34. You only need to supply the missing word meaning.",
+      "point": ["questions", "function:WordValues.value"],
+      "goal": {"all": [{"example": "WordValues.value(\"twelve\")", "output": "12"}, {"ran": "WordAdd.eval(\"twenty-two plus twelve\")", "status": "ok", "output": "34"}]},
+      "skip": [{"addExample": "WordValues.value(\"twelve\") == 12"}, {"run": "WordAdd.eval(\"twenty-two plus twelve\")"}]
+    },
+    {
+      "text": "Your new row works in other expressions too. Run twelve plus two: the existing rule reuses the meaning you just added.",
+      "call": "WordAdd.eval(\"twelve plus two\")",
+      "point": ["run"],
+      "goal": {"ran": "WordAdd.eval(\"twelve plus two\")", "status": "ok", "output": "14"},
+      "skip": [{"run": "WordAdd.eval(\"twelve plus two\")"}]
+    },
+    {
+      "text": "Examples supply the answers you know. Code combines them, and a missing answer becomes a question. Try more additions, edit a table row, or use Test to check that code agrees with its examples. Test status is separate from where a run's answer came from.",
+      "point": ["why", "functions"]
+    }
+  ]
+}
