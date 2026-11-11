@@ -6,8 +6,7 @@
     {
       "text": "Eleven means 11 because someone wrote that answer in a table. Code handles the structure of twenty-two and adds numbers together. This project uses both: editable examples for word meanings, and rules for combining them.",
       "call": "WordAdd.eval(\"twenty-two plus eleven\")",
-      "open": "word_values.star",
-      "point": ["function:WordValues.value", "editor"]
+      "point": ["function:WordValues.value"]
     },
     {
       "text": "Press Run to work out twenty-two plus eleven. This whole expression has no saved example, so the code must combine the smaller answers.",

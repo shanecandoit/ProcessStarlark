@@ -305,8 +305,8 @@ and the catalog follow the rules on this page. The differences:
 - There's no `.cache/`; every call is computed fresh.
 - Word-number addition is the default sample. A guided tour (**Tour**, or a
   `#tour=addition` link) introduces word meanings as examples and composition
-  as code. It opens on a first visit; saved projects and tour progress win
-  over the default. The `#tour=shipping` link still opens the business tour.
+  as code. A first visit opens the sample with collapsible guidance; the tour
+  is optional. Saved projects and tour progress win over the default. The `#tour=shipping` link still opens the business tour.
 - Roman numerals remain in the sample picker and `fixtures/roman/`; use
   `park --root fixtures/roman ...` to select them in the CLI.
 - Function tables are editable (D21). Type a row in the blank last row and
@@ -320,8 +320,15 @@ and the catalog follow the rules on this page. The differences:
   inputs, then the output.
 - Questions can be dismissed without answering, which is like deleting the
   line from `questions.txt`.
-- Every run shows "Why this answer", the same tree as `park run --why`.
-  Each location opens that line in the editor.
+- Every run can show **How this answer was made**, nested steps from the same
+  trace as `park run --why`. Saved answers and rules have distinct labels.
+  Steps open their example rows or code; **Execution details** holds the raw
+  call tree. A saved exact example has no computed children.
+- The word-number sample accepts a plain expression. **Use a function call**
+  reveals the underlying call. **Show code** opens the editor; the guide and
+  explanation can be collapsed. These choices are remembered locally.
+- Results and checks are marked stale after source edits; stale explanation
+  links are disabled until rerun.
 - Questions appear in a panel. Answering one adds the example, exactly like
   `park example add`, then reruns the last call.
 - *Download* saves a zip that the CLI opens as a normal project.

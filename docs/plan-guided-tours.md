@@ -4,7 +4,7 @@ Status: phases 1 and 2 built, updated 2026-11-10, with two tours:
 [word-number addition](../web/tours/addition.json) and
 [shipping](../web/tours/shipping.json). Part of the
 playground's phase 3 ([plan-web-playground.md](plan-web-playground.md)).
-The default first-visit tour is
+The default optional tour is
 <https://shanecandoit.github.io/ProcessStarlark/#tour=addition>.
 
 ## Goal
@@ -15,7 +15,7 @@ becomes a question instead of a guess, the answer resumes the call, and "why"
 traces the result back to the person who wrote each part. No install, no
 explanation from us.
 
-The default tour introduces number-word addition: eleven is an authored word
+The default optional tour introduces number-word addition: eleven is an authored word
 meaning, a rule composes twenty and two, and adding the missing meaning of
 twelve unlocks several expressions. It starts with a call that has no exact
 whole-expression example, so its Why tree shows the nested computation.
@@ -172,12 +172,14 @@ goal cases tests both.
 
 - A tour panel takes the top of the right-hand pane. It shows the role chip,
   the step text, the step number, **Back**, **Skip** (if there's a skip),
-  **Next** (if there's no goal), and **Exit tour**. On phones it's a bar
-  pinned to the bottom of the screen.
+  **Next** (if there's no goal), and **Exit tour**. On phones it stays in the
+  document flow so it does not cover the task.
 - When a goal is met, the panel marks the step done and moves on after a
   short pause, so the reader sees the result first.
-- The header has a **Tour** button. A first visit (nothing saved, no link)
-  opens the first tour. A share link always wins over the tour.
+- The header has a **Tour** button, and the introductory guide has **Walk me
+  through it**. A first visit opens the default sample with collapsible guidance;
+  tours start on request. Explicit tour links and tours in progress still
+  resume automatically. A share link always wins over the tour.
 
 ## Tours to write
 
@@ -210,7 +212,8 @@ goal cases tests both.
    (`workspace.Prepare`, `TestToursReplay`), plus the shipping tour.
 2. **Done.** The tour panel, with goals, skip, Back, Exit, and Finish; a
    separate storage slot; deep links (`#tour=id/step`, also when the page is
-   already open); and first-visit auto-start. A headless browser check
+   already open); and explicit tour links. First-visit auto-start was replaced by an optional
+   introduction in the progressive workspace update. A headless browser check
    plays the whole tour, some steps by hand and some skipped, plus reload,
    deep link, exit, the checkpoint fallback, and phone width.
 3. The remaining tours.

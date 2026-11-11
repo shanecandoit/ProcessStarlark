@@ -332,3 +332,8 @@ td input.cell { font-family: var(--sans); padding: 6px 8px; }
   button, summary { min-height: 44px; }
   input, select, textarea, td input.cell { font-size: 16px; }
 }
+.node-detail > summary { margin-top: 10px; font-size: 12px; color: var(--muted); }
+.row-actions { white-space: nowrap; }
+.row-actions-heading { width: 90px; }
+#question-slot .questions-section { margin: 20px 0 10px; }
+#question-slot .questions > li { background: var(--bg); }

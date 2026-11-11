@@ -1,7 +1,7 @@
 # Plan: browser playground
 
 Status: phases 1 and 2 done, phase 3 includes Why view and guided tours,
-2026-11-10. Word-number addition is the default sample and first-visit tour.
+2026-11-10. Word-number addition is the default sample; its tour is optional.
 Direction:
 [ideas-direction.md](ideas-direction.md).
 
@@ -126,16 +126,21 @@ tests. `cmd/park-wasm` is a thin `syscall/js` bridge over it.
 - **Why view: done.** Every run shows the `--why` tree (D20) under the
   answer, with sources coloured and each location opening the file at that
   line. `workspace.Run` always records it and returns it as `why`.
-- **Nested visual explanations: design exploration only.** Compare treemap,
-  icicle, nested-frame, and text layouts before selecting an implementation.
-  See [the treemap visualizer plan](plan-treemap-visualizer.md).
+- **Approachable workspace and nested explanations: built.** The default
+  sample accepts a plain expression. Results lead to nested, collapsible
+  execution steps with explicit answer origins; each saved answer can open
+  its exact table row. Missing answers are editable beside the result, above
+  the explanation. Code and raw calls are available on demand. Introductory
+  guidance, explanation visibility, and the code pane remember their state.
+  See [the visualizer plan](plan-treemap-visualizer.md) for the remaining
+  usability evaluation; rectangle area does not encode a quantity.
 - **Fill-and-resume:** answer the innermost question in place and the
   original call reruns automatically (ideas #5). A first cut exists: answering
   any question reruns the last call. Next: show the chain of questions one
   call raises, and answer them in order.
 - **Guided tours:** built; see [plan-guided-tours.md](plan-guided-tours.md).
   Tours are data (JSON steps with goals and skips), checked at build time by
-  replaying them through the engine. Word-number addition is the first-visit
+  replaying them through the engine. Word-number addition is the default optional
   tour; shipping tells the story with two roles, Ops and the developer.
 - **Function tables:** done early, in phase 1. Each function is a table with
   inputs as columns and the output last; rows added by an answer are
@@ -167,3 +172,38 @@ model calls. The playground stays a static page.
   packages as the CLI, and `internal/workspace` tests check that the CLI and
   the workspace write identical `questions.txt` and `park.html` for the same
   commands.
+
+## Progressive disclosure in the workspace
+
+A first visit opens the default sample with a short collapsible explanation,
+not an automatic tour. **Walk me through it** and **Tour** start the guided
+flow. Saved projects, explicit tour links, and tours in progress still win
+at startup. On phones, the task comes first and tours stay in document flow.
+
+The word-number sample has a plain text expression field backed by the same
+`WordAdd.eval` call. **Use a function call** exposes the original input;
+other projects continue to use function calls. **Show code** reveals the
+existing editor without removing the example tables. Closing the introduction
+also hides its suggested exercises. Closing the explanation keeps subsequent
+runs compact. These preferences are separate from project files and share
+links, stored under `park-playground-ui-v1`.
+
+`web/presentation.js` contains display conventions, literal display, structured
+row matching, and outcome labels. It does not execute or infer rules. The
+workspace's trace now exposes qualified function names, ordered input names,
+input literals, resolver identity, and the failed flag. Questions expose the
+same structured inputs. The nested renderer never parses its friendly labels
+to identify a call. Exact-example runs remain single-node traces.
+
+A changed source file marks an older result and its explanation as stale and
+disables navigation into its old locations. An edited input labels the result
+as belonging to the previous input. Check results have their own staleness
+notice. Source files typed while an engine operation runs are preserved; a
+result from a previous project cannot replace the currently selected project.
+
+Frontend model checks run with `node --test web/presentation.test.js` (Node is
+only needed for these developer checks). `go test ./...` checks the structured
+bridge, sample projects, and all tour replays. Build with `sh web/build.sh`.
+Browser verification should include the full missing-answer/reuse flow,
+exact-example shortcuts, editing from a visual step, stale navigation,
+independent check results, preference persistence, and a narrow viewport.

@@ -18,6 +18,9 @@ func TestWordAdditionDefaultAndProvenance(t *testing.T) {
 	if r.Why == nil || r.Why.Source != "code" || len(r.Why.Steps) != 2 {
 		t.Fatalf("the default call must compute its answer: %+v", r.Why)
 	}
+	if r.Why.Function != "WordAdd.eval" || len(r.Why.Inputs) != 1 || r.Why.Inputs[0] != "text" || r.Why.Input["text"] != `"twenty-two plus eleven"` || r.Why.Failed {
+		t.Fatalf("trace must expose literal inputs and explicit outcome: %+v", r.Why)
+	}
 	left, right := r.Why.Steps[0], r.Why.Steps[1]
 	if left.Source != "code" || left.Output != "22" || len(left.Steps) != 2 {
 		t.Fatalf("twenty-two must compose two lookups: %+v", left)
@@ -48,6 +51,13 @@ func TestWordAdditionMissingMeaningAndReuse(t *testing.T) {
 	r := Run(ctx, files, `WordAdd.eval("twenty-two plus twelve")`)
 	if r.Status != Unresolved || len(r.Snapshot.Questions) != 1 || r.Snapshot.Questions[0].Line != `WordValues.value("twelve")` {
 		t.Fatalf("expected only the missing word meaning: %+v", r)
+	}
+	q := r.Snapshot.Questions[0]
+	if q.Input["word"] != `"twelve"` || len(q.Inputs) != 1 || q.Inputs[0] != "word" {
+		t.Fatalf("question needs structured input for its display: %+v", q)
+	}
+	if !r.Why.Failed || !r.Why.Steps[1].Failed || !r.Why.Steps[1].Steps[0].Failed || r.Why.Steps[1].Steps[0].Source != "unknown" {
+		t.Fatalf("missing answers must preserve blocked ancestors: %+v", r.Why)
 	}
 	r = AddExample(r.Files, `WordValues.value("twelve") == 12`)
 	if r.Status != OK || len(r.Snapshot.Questions) != 0 {

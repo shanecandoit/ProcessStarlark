@@ -61,6 +61,21 @@ func TestRunFromExamplesAndCode(t *testing.T) {
 	}
 }
 
+func TestTraceStructuredLiteralInputs(t *testing.T) {
+	files := Files{"echo.star": `Process Echo:
+    def echo(payload):
+        result = payload
+        return result
+`}
+	r := Run(context.Background(), files, `Echo.echo({"message": "a,b", "values": [1, "a\\\"b"]})`)
+	if r.Status != Unconfirmed || r.Why == nil || r.Why.Function != "Echo.echo" || r.Why.Input["payload"] != r.Output {
+		t.Fatalf("structured inputs must preserve nested and escaped literals: %+v", r)
+	}
+	if r.Why.Failed || r.Why.Source != "unconfirmed code" {
+		t.Fatalf("an unconfirmed answer still returned successfully: %+v", r.Why)
+	}
+}
+
 func TestQuestionAnsweredInline(t *testing.T) {
 	files := readDir(t, "../../examples/shipping")
 	ctx := context.Background()

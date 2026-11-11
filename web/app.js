@@ -281,6 +281,10 @@ function renderProblem() {
 let shownQuestions = "";
 function renderQuestions() {
   const qs = state.snapshot?.questions || [];
+  const section = $("questions-section");
+  const destination = state.result && ["unresolved", "unconfirmed"].includes(state.result.status) ? $("question-slot") : $("questions-home");
+  if (section.parentElement !== destination) destination.append(section);
+  section.hidden = qs.length === 0;
   $("qcount").textContent = qs.length ? `(${qs.length})` : "";
   $("qhint").textContent = state.result?.status === "ok" ? "Park has the answers it needs for this run." : "No open questions. Try an input to see what Park knows.";
   $("qhint").hidden = qs.length > 0;
@@ -290,21 +294,30 @@ function renderQuestions() {
 
 function question(q) {
   const word = q.function === "WordValues.value" ? view.readable(q.input?.word) : null;
-  const prompt = word !== null ? `What number does “${word}” mean?` : `${q.hasProposal ? "Confirm an answer for" : "What is the answer for"} ${view.title(q.function)}?`;
-  const value = el("input", { "aria-label": prompt, placeholder: word !== null ? "Number" : 'Answer, e.g. 9 or "text"', spellcheck: "false", value: state.questionDrafts[q.call] ?? (q.hasProposal ? q.proposed : ""), inputmode: word !== null ? "numeric" : "text" });
+  const textAnswer = view.textOutput(functionFor(q.function));
+  const prompt = word !== null ? `What number does “${word}” mean?` : q.function === "Zones.zone" ? `Which shipping zone is “${view.readable(q.input?.country)}” in?` : `${q.hasProposal ? "Confirm an answer for" : "What is the answer for"} ${view.title(q.function)}?`;
+  const value = el("input", { "aria-label": prompt, placeholder: word !== null ? "Number" : textAnswer ? "Text answer" : 'Answer, e.g. 9 or "text"', spellcheck: "false", value: state.questionDrafts[q.call] ?? (q.hasProposal ? textAnswer ? view.readable(q.proposed) : q.proposed : ""), inputmode: word !== null ? "numeric" : "text" });
   value.addEventListener("input", () => { state.questionDrafts[q.call] = value.value; });
   const error = el("p", { class: "question-error", role: "alert" });
   const submit = async () => {
     if (!value.value.trim()) { value.focus(); return; }
+    if (word !== null && (!/^\d+$/.test(value.value.trim()) || Number(value.value) > 99)) {
+      error.textContent = "Enter a whole number from 0 to 99."; value.focus(); return;
+    }
     button.disabled = true;
-    const r = await answer(`${q.call} == ${value.value.trim()}`);
+    let literal = value.value.trim();
+    if (textAnswer) {
+      try { if (typeof JSON.parse(literal) !== "string") literal = JSON.stringify(value.value); }
+      catch { literal = JSON.stringify(value.value); }
+    }
+    const r = await answer(`${q.call} == ${literal}`);
     button.disabled = false;
     if (r && r.status !== "ok") { error.textContent = r.message; value.focus(); }
     else { delete state.questionDrafts[q.call]; $("output").focus(); }
   };
   const button = el("button", { type: "button", onclick: submit }, q.hasProposal ? "Confirm example" : "Save example");
   value.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); submit(); } });
-  const scope = word !== null ? "Save one word meaning. Other expressions can use it too." : "Save the answer for this exact input. Other rules can use this example.";
+  const scope = word !== null ? "Save one word meaning. Other expressions can use it too." : "Save the answer for this exact input. Other rules can use this example." + (textAnswer ? " Text answers don't need quotes." : "");
   return el("li", { class: q.hasProposal ? "proposal" : "", "data-question": q.call },
     el("div", { class: "question-heading" }, el("h3", {}, prompt), el("p", { class: "hint" }, scope)),
     word === null ? el("p", { class: "question-input" }, (q.inputs || []).map(n => `${n}: ${view.readable(q.input?.[n])}`).join(" · ")) : null,
@@ -318,26 +331,30 @@ function question(q) {
 
 function renderFunctions() {
   const box = $("view-functions");
+  const expanded = new Set([...box.querySelectorAll("article.fn")].filter(node => node.querySelector(".function-details")?.open).map(node => node.dataset.fn));
   const procs = state.snapshot?.processes || [];
   if (!procs.length) {
     box.replaceChildren(el("p", { class: "empty" }, state.snapshot?.valid ? "No functions yet." : "Fix the error to see functions."));
     return;
   }
-  box.replaceChildren(...procs.flatMap((p) => p.functions.map((f) => functionCard(f))));
+  const functions = procs.flatMap(p => p.functions).sort((a, b) => Number(b.state === "example-only") - Number(a.state === "example-only"));
+  box.replaceChildren(...functions.map(f => functionCard(f, expanded.has(f.qualified))));
 }
 
 // Each function is a table: inputs, then the output. Rows can be edited like
 // a spreadsheet; every change is an ordinary example line in the module.
-function functionCard(f) {
+function functionCard(f, expanded = false) {
   const stateClass = f.state === "needs examples" ? "state needs" : "state";
-  const head = el("tr", {}, ...f.inputs.map((n) => el("th", {}, view.column(f.qualified, n))), el("th", { class: "out" }, view.column(f.qualified, f.output)), el("th"));
+  const head = el("tr", {}, ...f.inputs.map((n) => el("th", {}, view.column(f.qualified, n))), el("th", { class: "out" }, view.column(f.qualified, f.output)), el("th", { class: "row-actions-heading" }, "Actions"));
   const rows = f.examples.map((ex) => {
     const callText = `${f.qualified}(${ex.inputs.join(", ")})`;
     if (state.editing?.fn === f.qualified && state.editing.call === callText) return editRow(f, [...ex.inputs, ex.output], callText);
     return el("tr", { class: (state.fresh.has(rowKey(f.qualified, ex)) ? "fresh " : "") + "row", title: "Click to edit", onclick: () => { state.editing = { fn: f.qualified, call: callText }; renderFunctions(); focusRow(f.qualified, "tr.editing"); } },
       ...ex.inputs.map((v) => el("td", {}, view.readable(v))),
       el("td", { class: "out" }, view.readable(ex.output)),
-      el("td", {}, el("button", { type: "button", class: "x", title: `Remove example ${callText}`, "aria-label": `Remove example ${callText}`, onclick: (e) => { e.stopPropagation(); call("removeExample", callText); } }, "×")));
+      el("td", { class: "row-actions" },
+        el("button", { type: "button", class: "x", "aria-label": `Edit example ${callText}`, onclick: e => { e.stopPropagation(); state.editing = { fn: f.qualified, call: callText }; renderFunctions(); focusRow(f.qualified, "tr.editing"); } }, "Edit"),
+        el("button", { type: "button", class: "x", title: `Remove example ${callText}`, "aria-label": `Remove example ${callText}`, onclick: (e) => { e.stopPropagation(); call("removeExample", callText); } }, "×")));
   });
   rows.push(editRow(f, [], ""));
   const note = state.note?.fn === f.qualified ? state.note : null;
@@ -351,7 +368,7 @@ function functionCard(f) {
     note ? el("div", { class: "note note-" + note.kind },
       el("p", {}, note.text),
       ...(note.lines || []).map((l) => el("p", { class: "fail" }, l))) : null,
-    el("details", { class: "function-details" }, el("summary", {}, "Function details & import"),
+    el("details", { class: "function-details", open: expanded }, el("summary", {}, "Function details & import"),
       el("code", {}, `${f.qualified.split(".")[0]}.${f.signature}`),
       el("button", { type: "button", class: "quiet", onclick: () => openFile(f.path, f.line) }, "View code"), importBar(f)),
     f.examples.length ? null : el("p", { class: "hint" }, "No rows yet. Type one and press Enter, paste rows from a spreadsheet, or import a CSV or TSV file."));
@@ -397,7 +414,7 @@ const rowKey = (fn, ex) => fn + "(" + ex.inputs.join(",") + ")=" + ex.output;
 // re-renders as a draft until it's saved.
 function editRow(f, values, replace) {
   const draftKey = f.qualified + "\0" + replace;
-  const draft = state.drafts[draftKey] || values;
+  const draft = state.drafts[draftKey] || view.editableRow(f, values);
   const names = [...f.inputs, f.output];
   const inputs = names.map((name, i) => el("input", { class: "cell", value: draft[i] ?? "", placeholder: view.column(f.qualified, name), "aria-label": `${name} for a ${replace ? "row being edited" : "new row"} of ${f.qualified}`, spellcheck: "false", autocomplete: "off" }));
   const typed = () => inputs.map((i) => i.value);
@@ -494,7 +511,10 @@ function toggleCode(open, persist = true) {
   document.body.classList.toggle("code-open", open);
   $("code-toggle").textContent = open ? "Hide code" : "Show code";
   $("code-toggle").setAttribute("aria-expanded", String(open));
-  if (open) requestAnimationFrame(() => editor.refresh?.());
+  if (open) requestAnimationFrame(() => {
+    editor.refresh?.();
+    if (persist && matchMedia("(max-width: 1000px)").matches) $("source-pane").scrollIntoView({ block: "start" });
+  });
   if (persist) { preferences.code = open; savePreferences(); }
 }
 function showResult(r, note) {
@@ -521,7 +541,7 @@ function renderResult() {
   $("result-stale").hidden = !stale && !inputChanged;
   $("result-stale").textContent = stale ? "The project changed. This explanation is from the previous version. Run again to update it." : "The input changed. Run again for a new answer.";
   let message = r.message || "";
-  if (r.status === "ok" && r.why) message = r.why.source === "example" ? "This exact input has a saved answer. The calculation did not run." : "A rule worked this out using the smaller answers below.";
+  if (r.status === "ok" && r.why) message = r.why.source === "example" ? "This exact input has a saved answer. The calculation did not run." : r.why.steps?.length ? "A rule worked this out using the smaller answers below." : "The function's rule calculated this answer.";
   if (r.status === "unresolved") message = "One answer is missing. Save it below, and Park will rerun the original request.";
   if (r.status === "unconfirmed") message = "Some rules need more examples. Confirm or correct the suggested answers below.";
   const text = $("message");
@@ -566,6 +586,7 @@ function explainStep(s, depth = 0) {
   let description = f?.description || "Inspect this function's examples or its code.";
   if (s.source === "example") description = "A saved example answers this exact input. No code ran for this step.";
   if (s.source === "unknown") description = "This input has no saved answer and no implementation. Supply its answer to continue.";
+  if (s.source === "proposed") description = `Suggested by ${s.by || "a resolver"}. Confirm or correct this answer before relying on it.`;
   if (s.error) description = s.error;
   const actions = el("div", { class: "node-actions" });
   if (s.source === "unknown" || s.source === "unconfirmed code" || s.source === "proposed") {
@@ -578,8 +599,9 @@ function explainStep(s, depth = 0) {
   }
   if (f) actions.append(el("button", { type: "button", class: "quiet", "data-trace-action": "examples", onclick: () => inspectExamples(s, s.source === "example") }, s.source === "example" ? "Edit this saved answer" : "See examples"));
   if (s.path) actions.append(el("button", { type: "button", class: "quiet", "data-trace-action": "code", onclick: () => { if (traceIsCurrent()) openFile(s.path, s.line); } }, s.source === "example" ? "See source" : "View code"));
-  node.append(el("div", { class: "node-detail" }, el("p", {}, description), actions));
   if (s.steps?.length) node.append(el("div", { class: "node-children" }, s.steps.map(child => explainStep(child, depth + 1))));
+  if (s.steps?.length) node.append(el("details", { class: "node-detail" }, el("summary", {}, "Inspect this rule"), el("p", {}, description), actions));
+  else node.append(el("div", { class: "node-detail" }, el("p", {}, description), actions));
   return node;
 }
 

@@ -85,6 +85,7 @@
       <output id="output" aria-live="polite" tabindex="-1"></output>
       <p id="result-stale" class="stale" hidden></p>
       <p id="message"></p>
+      <div id="question-slot"></div>
       <details id="why" class="why" open hidden>
         <summary>How this answer was made</summary>
         <p class="hint explanation-help">Each step contains the smaller answers it used. Select a step to inspect its example or rule.</p>
@@ -95,11 +96,11 @@
 
     </section>
 
-    <section id="questions-section" class="questions-section" aria-labelledby="questions-heading">
+    <div id="questions-home"><section id="questions-section" class="questions-section" aria-labelledby="questions-heading">
     <h2 id="questions-heading">Answers Park needs <span id="qcount" class="count"></span></h2>
     <p class="hint" id="qhint">No questions yet. Try an input to see what Park knows.</p>
     <ul id="questions" class="questions"></ul>
-    </section>
+    </section></div>
 
     <div class="section-heading examples-heading"><div><p class="eyebrow">Work with examples</p><h2>Saved answers and rules</h2></div><p class="hint">Edit a row or add an answer. Your changes stay in this browser.</p></div>
     <div class="tabs" role="tablist">

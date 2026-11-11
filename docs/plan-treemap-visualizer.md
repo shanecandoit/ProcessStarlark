@@ -1,9 +1,11 @@
 # Plan: explore a treemap explanation view
 
-Status: **Open design exploration**, 2026-11-10. No visualizer implementation
-is selected by this plan. The current text Why view remains the
-working baseline. The earlier clickable sketch was a conversation aid, not
-an approved layout or a production component.
+Status: **First working version built; usability evaluation open**, 2026-11-10.
+The playground now uses collapsible nested frames over the real execution
+trace, with optional developer details. This implements the answer-and-reuse
+flow below. An area-weighted treemap is still an open alternative, and the
+formative study has not been run. The earlier clickable sketch was a
+conversation aid; the working view is implemented in the playground.
 
 Related: [browser playground](plan-web-playground.md),
 [word-number addition](ideas-sample-projs.md#number-words-addition), and
@@ -12,9 +14,9 @@ Related: [browser playground](plan-web-playground.md),
 ## Recommendation after product, design, and engineering review
 
 The natural-language addition parser already exists in
-`examples/word-addition/` and is the default sample and first-visit tour.
-The next step is a small onboarding prototype, not another parser or a full
-treemap implementation. The following are review perspectives and proposals,
+`examples/word-addition/` and is the default sample and optional tour.
+The first implementation is a small onboarding flow, rather than another
+parser or a quantitative treemap. The following are review perspectives and proposals,
 not findings from user research or independent reviewers.
 
 The first question is **can someone supply a missing answer and understand
@@ -227,10 +229,8 @@ between a missing answer and an execution error, and point the user to the
 innermost actionable node. Unreached later calls are absent from the trace;
 do not invent them as waiting nodes.
 
-The engine's internal Step has a `Failed` flag, but the workspace JSON Step
-currently omits it. If the chosen design needs explicit per-node outcome
-badges, expose that field rather than treating the answer-origin field as an
-outcome. An unknown lookup is still a question even though its enclosing
+The workspace JSON Step now exposes the engine's `Failed` flag explicitly,
+so per-node outcomes can be shown independently of answer origin. An unknown lookup is still a question even though its enclosing
 calculation could not return.
 
 Test results should refer to the project revision they checked. After an
@@ -306,9 +306,8 @@ onboarding comparison; do not block the first prototype on every engine state.
 
 Before production, broaden the corpus to invalid `eleven-two`, unconfirmed
 code, a resolver proposal, deeper chains, repeated calls, and large object
-values. Proposal metadata such as resolver identity is not fully exposed in
-the current workspace Step; support can be scoped separately from the first
-onboarding experiment.
+values. Resolver identity is now exposed in the workspace Step. Resolver-specific
+confirmation UI can be scoped separately from the first onboarding flow.
 
 ### 2. Compare an outline with nested frames in the same flow
 
@@ -368,4 +367,6 @@ corresponding engine data.
 4. How are answer origin and separate check results presented without noise?
 5. Does this replace the text tree, supplement it, or remain an optional view?
 
-No answer to these questions is implied by the earlier interactive sketch.
+The first implementation chooses nested frames as a working baseline, keeps
+raw execution details available, and makes the explanation collapsible.
+Further layout decisions should follow the usability comparison above.

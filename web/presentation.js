@@ -43,7 +43,22 @@
   function title(fn) { return functions[fn]?.title || fn; }
   function column(fn, name) { return functions[fn]?.columns?.[name] || name.replace(/_/g, " "); }
   function inputs(step) { return (step.inputs || []).map(n => readable(step.input?.[n] ?? "?")).join(" · "); }
-  const api = { title, column, readable, expressionFromCall, projectKey, outcome, identity, inputs, origins };
+  function textOutput(f) {
+    return Boolean(f?.examples.length) && f.examples.every(ex => {
+      try { return typeof JSON.parse(ex.output) === "string"; } catch { return false; }
+    });
+  }
+  function editableRow(f, values) {
+    return values.map((literal, i) => {
+      const column = f.examples.map(ex => i < f.inputs.length ? ex.inputs[i] : ex.output);
+      try {
+        const text = JSON.parse(literal);
+        if (typeof text === "string" && text && text.trim() === text && !/^["']/.test(text) && column.length && column.every(value => typeof JSON.parse(value) === "string")) return text;
+      } catch { /* preserve exact literals in mixed or structured columns */ }
+      return literal;
+    });
+  }
+  const api = { title, column, readable, expressionFromCall, projectKey, outcome, identity, inputs, origins, textOutput, editableRow };
   root.ParkView = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(globalThis);

@@ -156,11 +156,14 @@ Then open `park.html` in this folder to see every function and its examples.
 To try Park in a browser instead, run `sh serve.sh` and open
 <http://localhost:8000>. The hosted copy at <https://shanecandoit.github.io/ProcessStarlark/> is rebuilt on
 every push to `main` by [.github/workflows/pages.yml](.github/workflows/pages.yml). The playground runs the same engine, compiled to
-WebAssembly: edit the samples, run calls, and answer Park's questions inline.
+WebAssembly: try a plain expression, edit examples in tables, and answer
+Park's questions beside the result. Expand the visual explanation to inspect
+how an answer was made; **Show code** opens the editor. Guidance and
+explanations can be collapsed, and the playground remembers those choices.
 The root demo is three files: `word_values.star` for vocabulary,
 `number_words.star` for number structure, and `word_add.star` for addition.
 A clean copy lives in `examples/word-addition/` and is bundled as the first
-playground sample and the first-visit tour. Roman numerals remain available
+playground sample and the default optional tour. Roman numerals remain available
 in the sample picker and in `fixtures/roman/`; use `--root fixtures/roman`
 before the CLI command to try them. Saved browser projects and tour progress
 still take precedence over the first-visit default.
