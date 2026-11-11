@@ -202,3 +202,133 @@ td button.add { color: var(--accent); font-weight: 600; }
 .note .fail { margin-top: 4px; font-family: var(--mono); font-size: 12.5px; color: var(--bad); white-space: pre-wrap; }
 .note-warn { border-left-color: var(--warn); }
 .note-error { border-left-color: var(--bad); color: var(--bad); }
+
+/* Progressive workspace: start with the task, reveal the implementation. */
+[hidden] { display: none !important; }
+.bar { padding: 16px 24px; gap: 12px 24px; }
+.bar .tagline { font-size: 13px; max-width: 340px; }
+.bar .actions { flex-wrap: wrap; gap: 6px; }
+.bar button { padding: 6px 10px; font-size: 13px; }
+.layout { display: block; max-width: 1000px; margin: 0 auto; min-height: 0; }
+.pane { padding: 28px 32px; }
+.work { min-width: 0; }
+.source { border: 0; border-left: 1px solid var(--line); background: var(--panel); }
+.code-open .layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(340px, 1fr); max-width: 1700px; align-items: start; }
+.code-open .source { position: sticky; top: 0; min-height: 90vh; }
+.source-heading, .section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 20px; }
+.source-heading { margin-bottom: 16px; }
+.source-heading h2 { margin: 0; }
+.section-heading h2 { font-size: 23px; font-weight: 600; margin: 0; letter-spacing: -.4px; }
+.section-heading > .hint { max-width: 290px; margin: 0; }
+.section-heading button { font-size: 12px; padding: 5px 9px; }
+.eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin: 0 0 5px; }
+.welcome { margin: 0 0 28px; border-bottom: 1px solid var(--line); padding: 0 0 18px; }
+.welcome > summary { color: var(--accent); font-weight: 600; cursor: pointer; }
+.welcome-body > p { max-width: 600px; color: var(--muted); }
+.welcome-steps { list-style: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; padding: 0; margin: 20px 0; counter-reset: welcome; }
+.welcome-steps li { counter-increment: welcome; border-left: 2px solid var(--line); padding-left: 12px; }
+.welcome-steps strong { display: block; font-size: 14px; font-weight: 600; }
+.welcome-steps strong::before { content: counter(welcome) ". "; color: var(--accent); }
+.welcome-steps span { display: block; font-size: 13px; color: var(--muted); margin-top: 4px; }
+.welcome-body button { font-size: 13px; }
+.try-area { margin-top: 4px; }
+.runbox { align-items: end; margin-top: 20px; }
+.runbox .entry { flex: 1; min-width: 0; }
+.runbox label { display: block; font-size: 13px; margin-bottom: 6px; color: var(--ink); }
+.runbox input { width: 100%; padding: 11px 12px; font-size: 15px; }
+.runbox > button { min-height: 46px; }
+#expression { font-family: var(--sans); font-size: 17px; }
+#input-help { margin-top: 9px; }
+.try-suggestions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; margin: 14px 0 18px; color: var(--muted); }
+.try-suggestions button { padding: 4px 8px; font-size: 12px; }
+.result { margin-top: 22px; padding: 20px; border-radius: 12px; }
+.result-input { overflow-wrap: anywhere; font-size: 14px; }
+.result .badge { border: 0; padding: 0; font-size: 12px; display: block; margin-top: 14px; font-weight: 500; }
+.result #output { display: block; font: 500 38px/1.25 var(--sans); margin: 4px 0 10px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.result #output:empty { display: none; }
+.result p { font-size: 13px; }
+.result .stale, .stale { color: var(--warn); font-size: 13px; }
+.why { margin-top: 20px; padding-top: 16px; }
+.why > summary { color: var(--ink); font-size: 14px; font-weight: 600; cursor: pointer; }
+.result .explanation-help { margin: 10px 0 14px; }
+.explain-node { min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 10px 12px; }
+.explain-node summary { cursor: pointer; overflow-wrap: anywhere; }
+.node-heading { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; max-width: 94%; vertical-align: top; }
+.node-title { font-size: 13px; font-weight: 600; }
+.origin { font-size: 11px; color: var(--muted); padding: 1px 6px; border-radius: 4px; background: var(--code-bg); font-weight: 400; }
+[data-origin="example"] > summary .origin { color: var(--ask); background: color-mix(in srgb, var(--ask) 10%, var(--panel)); }
+[data-origin="unknown"] > summary .origin, [data-origin="unconfirmed code"] > summary .origin, [data-origin="proposed"] > summary .origin { color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, var(--panel)); }
+.node-value { display: block; font-size: 14px; margin-top: 6px; overflow-wrap: anywhere; }
+.node-value strong { font-weight: 600; }
+.node-arrow { color: var(--muted); }
+.node-outcome { display: block; color: var(--warn); font-size: 12px; margin-top: 5px; }
+.node-children { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; margin-top: 12px; }
+.node-children .node-children { grid-template-columns: 1fr; }
+.node-detail p { margin-top: 10px; font-size: 12px; }
+.node-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.node-actions button { padding: 4px 8px; font-size: 12px; }
+.raw-trace { margin-top: 14px; font-size: 12px; }
+.raw-trace > summary { color: var(--muted); cursor: pointer; }
+.raw-trace .tree { margin-top: 10px; }
+.raw-trace code, .raw-trace a { font-size: 12px; }
+.raw-trace a[aria-disabled="true"] { color: var(--muted); text-decoration: none; opacity: .6; cursor: default; }
+.questions-section { margin: 24px 0 32px; }
+.questions-section h2 { margin-top: 0; font-size: 15px; }
+.questions { margin-top: 10px; }
+.questions > li { display: block; padding: 16px; }
+.question-heading h3 { margin: 0 0 4px; font-size: 17px; font-weight: 600; }
+.question-heading .hint { margin: 0 0 12px; }
+.question-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.question-actions input { padding: 8px 10px; font-size: 16px; width: 100px; flex: 0 1 180px; max-width: 100%; }
+.question-actions button { padding: 8px 12px; font-size: 13px; }
+.question-call { font-size: 12px; color: var(--muted); margin-top: 12px; }
+.question-call > summary { cursor: pointer; }
+.question-call code { display: block; margin-top: 6px; }
+.question-error { color: var(--bad); margin: 8px 0 0; }
+.question-error:empty { display: none; }
+.question-input { overflow-wrap: anywhere; }
+.examples-heading { border-top: 1px solid var(--line); padding-top: 25px; margin-bottom: 20px; }
+.examples-heading h2 { font-size: 20px; }
+.fn { margin: 0 0 28px; padding: 18px 0 0; }
+.fn header h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.example-count { font-size: 12px; color: var(--muted); }
+.fn .desc { margin: 7px 0 12px; max-width: 700px; }
+.function-details { margin-top: 10px; font-size: 12px; color: var(--muted); }
+.function-details > summary { cursor: pointer; }
+.function-details > code { display: inline-block; margin: 10px 12px 8px 0; overflow-wrap: anywhere; }
+.function-details > button { padding: 3px 8px; font-size: 12px; }
+table { font-family: var(--sans); width: 100%; }
+th, td { padding: 8px 12px 8px 0; }
+th { text-transform: capitalize; }
+td input.cell { font-family: var(--sans); padding: 6px 8px; }
+.tourpanel { box-shadow: none; border-color: var(--line); border-left: 3px solid var(--accent); }
+@media (max-width: 1000px) {
+  .code-open .layout { display: block; }
+  .code-open .source { position: static; border-left: 0; border-top: 1px solid var(--line); min-height: 0; }
+}
+@media (max-width: 600px) {
+  .bar { padding: 14px 16px; gap: 12px; }
+  .bar .tagline { display: none; }
+  .picker { margin-left: auto; min-width: 0; }
+  .picker select { min-width: 0; max-width: 195px; }
+  .actions { width: 100%; }
+  .pane { padding: 20px 16px; }
+  .section-heading h2 { font-size: 21px; }
+  .welcome-steps { grid-template-columns: 1fr; gap: 12px; }
+  .welcome-steps span { margin-top: 0; }
+  .runbox { flex-wrap: wrap; }
+  .runbox .entry { flex-basis: 100%; }
+  .result { padding: 16px 12px; }
+  .node-children { grid-template-columns: 1fr; }
+  .explain-node { padding: 10px; }
+  .section-heading > .hint { max-width: none; }
+}
+/* Tours stay in document flow on phones, so the task is never covered. */
+@media (max-width: 860px) {
+  .tourpanel { position: static; max-height: none; overflow: visible; margin: 0 0 20px; }
+  body.touring { padding-bottom: 0; }
+}
+@media (pointer: coarse) {
+  button, summary { min-height: 44px; }
+  input, select, textarea, td input.cell { font-size: 16px; }
+}

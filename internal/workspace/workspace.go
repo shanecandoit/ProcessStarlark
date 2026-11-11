@@ -47,20 +47,29 @@ type Result struct {
 
 // Step is one call in a run's provenance tree, rendered for display.
 type Step struct {
-	Call   string  `json:"call"`
-	Output string  `json:"output"` // Starlark literal, or "?" if the call did not return.
-	Source string  `json:"source"` // example, code, unconfirmed code, unknown, or "" if the call never bound.
-	Path   string  `json:"path,omitempty"`
-	Line   int     `json:"line,omitempty"`
-	Error  string  `json:"error,omitempty"` // On the innermost failure only.
-	Steps  []*Step `json:"steps,omitempty"`
+	Function string            `json:"function"` // Structured identity; labels are presentation only.
+	Inputs   []string          `json:"inputs"`   // Signature order.
+	Input    map[string]string `json:"input"`    // Values as Starlark literals, matching example cells.
+	Failed   bool              `json:"failed"`   // Includes ancestors blocked by a child.
+	By       string            `json:"by,omitempty"`
+	Call     string            `json:"call"`
+	Output   string            `json:"output"` // Starlark literal, or "?" if the call did not return.
+	Source   string            `json:"source"` // example, code, unconfirmed code, unknown, or "" if the call never bound.
+	Path     string            `json:"path,omitempty"`
+	Line     int               `json:"line,omitempty"`
+	Error    string            `json:"error,omitempty"` // On the innermost failure only.
+	Steps    []*Step           `json:"steps,omitempty"`
 }
 
 func why(s *engine.Step) *Step {
 	if s == nil {
 		return nil
 	}
-	out := &Step{Call: s.Call(), Output: s.Answer(), Source: s.Source, Path: s.Path, Line: s.Line, Error: s.Error}
+	out := &Step{Function: s.Function, Inputs: s.Inputs, Failed: s.Failed, By: s.By, Call: s.Call(), Output: s.Answer(), Source: s.Source, Path: s.Path, Line: s.Line, Error: s.Error}
+	out.Input = make(map[string]string, len(s.Input))
+	for name, value := range s.Input {
+		out.Input[name] = samples.Literal(value)
+	}
 	for _, child := range s.Steps {
 		out.Steps = append(out.Steps, why(child))
 	}
@@ -111,11 +120,13 @@ type Example struct {
 }
 
 type Question struct {
-	Line        string `json:"line"` // As queued; confirmable when HasProposal.
-	Call        string `json:"call"`
-	Function    string `json:"function"`
-	Proposed    string `json:"proposed,omitempty"`
-	HasProposal bool   `json:"hasProposal"`
+	Inputs      []string          `json:"inputs"`
+	Input       map[string]string `json:"input"`
+	Line        string            `json:"line"` // As queued; confirmable when HasProposal.
+	Call        string            `json:"call"`
+	Function    string            `json:"function"`
+	Proposed    string            `json:"proposed,omitempty"`
+	HasProposal bool              `json:"hasProposal"`
 }
 
 func modules(files Files) map[string][]byte {
@@ -199,6 +210,11 @@ func describe(p *project.Project, open []project.Question, html string) Snapshot
 	}
 	for _, q := range open {
 		dq := Question{Line: q.Line(), Call: q.Call, Function: q.Function, HasProposal: q.HasProposal}
+		dq.Inputs = q.Inputs
+		dq.Input = make(map[string]string, len(q.Input))
+		for name, value := range q.Input {
+			dq.Input[name] = samples.Literal(value)
+		}
 		if q.HasProposal {
 			dq.Proposed = samples.Literal(q.Proposed)
 		}

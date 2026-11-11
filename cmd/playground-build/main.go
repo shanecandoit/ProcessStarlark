@@ -60,10 +60,11 @@ func build() error {
 		return err
 	}
 	copies := map[string]string{
-		filepath.Join("web", "index.html"): "index.html",
-		filepath.Join("web", "app.js"):     "app.js",
-		filepath.Join("web", "style.css"):  "style.css",
-		filepath.Join("web", "worker.js"):  "worker.js",
+		filepath.Join("web", "index.html"):      "index.html",
+		filepath.Join("web", "app.js"):          "app.js",
+		filepath.Join("web", "presentation.js"): "presentation.js",
+		filepath.Join("web", "style.css"):       "style.css",
+		filepath.Join("web", "worker.js"):       "worker.js",
 	}
 	for from, to := range copies {
 		b, err := os.ReadFile(from)

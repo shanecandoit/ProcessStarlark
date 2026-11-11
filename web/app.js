@@ -10,6 +10,12 @@ const TOUR_KEY = "park-tour-v1";   // a tour in progress, kept apart from the re
 const TOUR_PREFIX = "#tour=";      // #tour=shipping or #tour=shipping/4 (1-based step)
 const TOUR_SAMPLE = -2;            // state.sample while touring
 const $ = (id) => document.getElementById(id);
+const view = globalThis.ParkView;
+const UI_KEY = "park-playground-ui-v1";
+const preferences = (() => {
+  try { return JSON.parse(localStorage.getItem(UI_KEY) || "null") || {}; } catch { return {}; }
+})();
+const savePreferences = () => { try { localStorage.setItem(UI_KEY, JSON.stringify(preferences)); } catch { /* optional */ } };
 
 const state = {
   files: {},          // name -> source, including questions.txt when non-empty
@@ -24,6 +30,12 @@ const state = {
   drafts: {},         // typed, unsaved table cells, by function and row
   note: null,         // {fn, kind, text, lines}: what the last table edit did
   importAs: {},       // fn -> "examples" | "propose": where pasted or imported rows go
+  friendlyInput: false,
+  result: null,
+  resultKey: "",
+  testKey: "",
+  projectID: 0,
+  questionDrafts: {},
 };
 
 const MAX_IMPORT_BYTES = 2 << 20; // project.MaxFileBytes
@@ -88,19 +100,23 @@ const engine = {
 // Operations run one at a time, each on the files as they are when it starts.
 let queue = Promise.resolve();
 function call(op, ...args) {
-  const job = queue.then(() => execute(op, args));
+  const projectID = state.projectID;
+  const job = queue.then(() => projectID === state.projectID ? execute(op, args, projectID) : { obsolete: true });
   queue = job.catch(() => {});
   return job;
 }
 
 let busyTimer = 0;
-async function execute(op, args) {
+async function execute(op, args, projectID) {
   clearTimeout(busyTimer);
   busyTimer = setTimeout(() => { document.body.classList.add("busy"); $("stop").hidden = false; }, 800);
   const before = exampleKeys(state.snapshot);
   try {
     const sent = { ...state.files };
     const result = await engine.call(op, sent, args);
+    if (projectID !== state.projectID) return { obsolete: true };
+    result.projectKey = view.projectKey(sent);
+    if (op === "run") result.executedCall = args[0];
     if (result.files) {
       // Keep what the user typed while this call ran: a local edit wins.
       for (const [name, text] of Object.entries(state.files)) if (text !== sent[name]) result.files[name] = text;
@@ -167,6 +183,7 @@ const editor = (() => {
       },
       forget(keep) { for (const name of docs.keys()) if (!keep.includes(name)) docs.delete(name); if (!keep.includes(current)) current = ""; },
       reset() { docs.clear(); current = ""; },
+      refresh() { cm.refresh(); },
       goto(line) {
         cm.focus();
         cm.setSelection({ line: line - 1, ch: 0 }, { line: line - 1, ch: cm.getLine(line - 1)?.length ?? 0 });
@@ -226,6 +243,9 @@ function render() {
   renderFunctions();
   renderCatalog();
   renderSample();
+  renderInput();
+  renderResult();
+  $("test-stale").hidden = !state.testKey || state.testKey === view.projectKey(state.files);
   renderPoints();
 }
 
@@ -258,25 +278,41 @@ function renderProblem() {
   editor.mark(where?.file, where?.line);
 }
 
+let shownQuestions = "";
 function renderQuestions() {
   const qs = state.snapshot?.questions || [];
   $("qcount").textContent = qs.length ? `(${qs.length})` : "";
+  $("qhint").textContent = state.result?.status === "ok" ? "Park has the answers it needs for this run." : "No open questions. Try an input to see what Park knows.";
   $("qhint").hidden = qs.length > 0;
-  $("questions").replaceChildren(...(qs.length ? qs.map(question) : [el("li", { class: "empty-row" }, el("span", { class: "empty" }, "No open questions."))]));
+  const key = state.projectID + JSON.stringify(qs);
+  if (key !== shownQuestions) { shownQuestions = key; $("questions").replaceChildren(...qs.map(question)); }
 }
 
 function question(q) {
-  const value = el("input", { "aria-label": `Answer for ${q.call}`, placeholder: "answer, e.g. 9 or \"text\"", spellcheck: "false", value: q.hasProposal ? q.proposed : "" });
-  const submit = () => {
+  const word = q.function === "WordValues.value" ? view.readable(q.input?.word) : null;
+  const prompt = word !== null ? `What number does “${word}” mean?` : `${q.hasProposal ? "Confirm an answer for" : "What is the answer for"} ${view.title(q.function)}?`;
+  const value = el("input", { "aria-label": prompt, placeholder: word !== null ? "Number" : 'Answer, e.g. 9 or "text"', spellcheck: "false", value: state.questionDrafts[q.call] ?? (q.hasProposal ? q.proposed : ""), inputmode: word !== null ? "numeric" : "text" });
+  value.addEventListener("input", () => { state.questionDrafts[q.call] = value.value; });
+  const error = el("p", { class: "question-error", role: "alert" });
+  const submit = async () => {
     if (!value.value.trim()) { value.focus(); return; }
-    answer(`${q.call} == ${value.value.trim()}`);
+    button.disabled = true;
+    const r = await answer(`${q.call} == ${value.value.trim()}`);
+    button.disabled = false;
+    if (r && r.status !== "ok") { error.textContent = r.message; value.focus(); }
+    else { delete state.questionDrafts[q.call]; $("output").focus(); }
   };
-  value.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
-  return el("li", { class: q.hasProposal ? "proposal" : "" },
-    el("code", {}, q.call), el("span", { class: "eq" }, "=="), value,
-    el("button", { type: "button", onclick: submit }, q.hasProposal ? "Confirm" : "Answer"),
-    el("button", { type: "button", class: "quiet", title: "Remove this question without answering it", onclick: () => dismiss(q.call) }, "Dismiss"),
-    q.hasProposal ? el("span", { class: "hint" }, "proposed by unconfirmed code; edit it if it's wrong") : null,
+  const button = el("button", { type: "button", onclick: submit }, q.hasProposal ? "Confirm example" : "Save example");
+  value.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); submit(); } });
+  const scope = word !== null ? "Save one word meaning. Other expressions can use it too." : "Save the answer for this exact input. Other rules can use this example.";
+  return el("li", { class: q.hasProposal ? "proposal" : "", "data-question": q.call },
+    el("div", { class: "question-heading" }, el("h3", {}, prompt), el("p", { class: "hint" }, scope)),
+    word === null ? el("p", { class: "question-input" }, (q.inputs || []).map(n => `${n}: ${view.readable(q.input?.[n])}`).join(" · ")) : null,
+    el("div", { class: "question-actions" }, value, button,
+      el("button", { type: "button", class: "quiet", onclick: () => dismiss(q.call) }, "Dismiss")),
+    q.hasProposal ? el("p", { class: "hint" }, "This is a suggested answer. Correct it before confirming if needed.") : null,
+    error,
+    el("details", { class: "question-call" }, el("summary", {}, "Call details"), el("code", {}, q.call)),
   );
 }
 
@@ -294,28 +330,30 @@ function renderFunctions() {
 // a spreadsheet; every change is an ordinary example line in the module.
 function functionCard(f) {
   const stateClass = f.state === "needs examples" ? "state needs" : "state";
-  const head = el("tr", {}, ...f.inputs.map((n) => el("th", {}, n)), el("th", { class: "out" }, f.output), el("th"));
+  const head = el("tr", {}, ...f.inputs.map((n) => el("th", {}, view.column(f.qualified, n))), el("th", { class: "out" }, view.column(f.qualified, f.output)), el("th"));
   const rows = f.examples.map((ex) => {
     const callText = `${f.qualified}(${ex.inputs.join(", ")})`;
     if (state.editing?.fn === f.qualified && state.editing.call === callText) return editRow(f, [...ex.inputs, ex.output], callText);
     return el("tr", { class: (state.fresh.has(rowKey(f.qualified, ex)) ? "fresh " : "") + "row", title: "Click to edit", onclick: () => { state.editing = { fn: f.qualified, call: callText }; renderFunctions(); focusRow(f.qualified, "tr.editing"); } },
-      ...ex.inputs.map((v) => el("td", {}, v)),
-      el("td", { class: "out" }, ex.output),
+      ...ex.inputs.map((v) => el("td", {}, view.readable(v))),
+      el("td", { class: "out" }, view.readable(ex.output)),
       el("td", {}, el("button", { type: "button", class: "x", title: `Remove example ${callText}`, "aria-label": `Remove example ${callText}`, onclick: (e) => { e.stopPropagation(); call("removeExample", callText); } }, "×")));
   });
   rows.push(editRow(f, [], ""));
   const note = state.note?.fn === f.qualified ? state.note : null;
   return el("article", { class: "fn", "data-fn": f.qualified },
     el("header", {},
-      el("code", {}, f.qualified.split(".")[0] + "." + f.signature),
-      el("span", { class: stateClass }, f.state),
-      el("a", { href: "#", class: "state", onclick: (e) => { e.preventDefault(); openFile(f.path, f.line); } }, `${f.path}:${f.line}`)),
+      el("h3", {}, view.title(f.qualified)),
+      el("span", { class: stateClass }, f.state === "example-only" ? "Saved answers" : f.state === "needs examples" ? "Rule needs examples" : "Rule + examples"),
+      el("span", { class: "example-count" }, `${f.examples.length} examples`)),
     f.description ? el("p", { class: "desc" }, f.description) : null,
     el("div", { class: "table-wrap" }, el("table", {}, el("thead", {}, head), el("tbody", {}, rows))),
     note ? el("div", { class: "note note-" + note.kind },
       el("p", {}, note.text),
       ...(note.lines || []).map((l) => el("p", { class: "fail" }, l))) : null,
-    importBar(f),
+    el("details", { class: "function-details" }, el("summary", {}, "Function details & import"),
+      el("code", {}, `${f.qualified.split(".")[0]}.${f.signature}`),
+      el("button", { type: "button", class: "quiet", onclick: () => openFile(f.path, f.line) }, "View code"), importBar(f)),
     f.examples.length ? null : el("p", { class: "hint" }, "No rows yet. Type one and press Enter, paste rows from a spreadsheet, or import a CSV or TSV file."));
 }
 
@@ -361,7 +399,7 @@ function editRow(f, values, replace) {
   const draftKey = f.qualified + "\0" + replace;
   const draft = state.drafts[draftKey] || values;
   const names = [...f.inputs, f.output];
-  const inputs = names.map((name, i) => el("input", { class: "cell", value: draft[i] ?? "", placeholder: name, "aria-label": `${name} for a ${replace ? "row being edited" : "new row"} of ${f.qualified}`, spellcheck: "false", autocomplete: "off" }));
+  const inputs = names.map((name, i) => el("input", { class: "cell", value: draft[i] ?? "", placeholder: view.column(f.qualified, name), "aria-label": `${name} for a ${replace ? "row being edited" : "new row"} of ${f.qualified}`, spellcheck: "false", autocomplete: "off" }));
   const typed = () => inputs.map((i) => i.value);
   const save = async () => {
     const cells = typed();
@@ -429,21 +467,120 @@ function renderSample() {
   $("reset").disabled = state.sample < 0;
 }
 
+function allFunctions() { return (state.snapshot?.processes || []).flatMap(p => p.functions); }
+function functionFor(name) { return allFunctions().find(f => f.qualified === name); }
+function setCall(text) {
+  $("call").value = text;
+  const expression = view.expressionFromCall(text);
+  state.friendlyInput = expression !== null && preferences.rawCall !== true;
+  $("expression").value = expression ?? "";
+}
+function renderInput() {
+  const fn = functionFor("WordAdd.eval");
+  const available = fn && fn.inputs.length === 1 && fn.inputs[0] === "text";
+  if (!available) state.friendlyInput = false;
+  $("expression-entry").hidden = !state.friendlyInput;
+  $("call-entry").hidden = state.friendlyInput;
+  $("input-toggle").hidden = !available;
+  $("input-toggle").textContent = state.friendlyInput ? "Use a function call" : "Use an expression";
+  $("runform").querySelector("button[type=submit]").textContent = state.friendlyInput ? "Calculate" : "Run";
+  $("try-heading").textContent = state.friendlyInput ? "What would you like to add?" : "Try a function";
+  $("input-help").textContent = state.friendlyInput ? "Two English numbers from 0 to 99, joined by “plus.” Use hyphens, as in twenty-two." : "Enter a function call. Its examples below show the inputs it accepts.";
+  $("try-suggestions").hidden = !state.friendlyInput || !$("welcome").open;
+  $("welcome").hidden = !available;
+}
+function toggleCode(open, persist = true) {
+  $("source-pane").hidden = !open;
+  document.body.classList.toggle("code-open", open);
+  $("code-toggle").textContent = open ? "Hide code" : "Show code";
+  $("code-toggle").setAttribute("aria-expanded", String(open));
+  if (open) requestAnimationFrame(() => editor.refresh?.());
+  if (persist) { preferences.code = open; savePreferences(); }
+}
 function showResult(r, note) {
-  $("result").hidden = false;
+  if (r.obsolete) return;
+  state.result = r;
+  state.resultKey = r.projectKey || view.projectKey(state.files);
+  state.resultNote = note || "";
+  renderResult();
+  renderQuestions();
+}
+let shownWhy = null;
+function renderResult() {
+  const r = state.result;
+  $("result").hidden = !r;
+  if (!r) return;
+  const stale = state.resultKey !== view.projectKey(state.files);
+  const inputChanged = r.executedCall && r.executedCall !== $("call").value.trim();
   const status = $("status");
-  status.textContent = r.status;
+  const statuses = { ok: "Answer", unresolved: "Needs your answer", unconfirmed: "Answer needs confirmation", error: "Couldn't complete this", failed: "Checks found a disagreement" };
+  status.textContent = statuses[r.status] || r.status;
   status.className = "badge s-" + r.status;
-  $("output").textContent = r.output || "";
-  const message = [note, r.message].filter(Boolean).join(" ");
-  const where = r.status === "error" ? errorLocation(r.message) : null;
+  $("output").textContent = r.output ? view.readable(r.output) : "";
+  $("result-input").textContent = r.executedCall ? view.expressionFromCall(r.executedCall) ?? r.executedCall : "";
+  $("result-stale").hidden = !stale && !inputChanged;
+  $("result-stale").textContent = stale ? "The project changed. This explanation is from the previous version. Run again to update it." : "The input changed. Run again for a new answer.";
+  let message = r.message || "";
+  if (r.status === "ok" && r.why) message = r.why.source === "example" ? "This exact input has a saved answer. The calculation did not run." : "A rule worked this out using the smaller answers below.";
+  if (r.status === "unresolved") message = "One answer is missing. Save it below, and Park will rerun the original request.";
+  if (r.status === "unconfirmed") message = "Some rules need more examples. Confirm or correct the suggested answers below.";
   const text = $("message");
-  text.replaceChildren(message);
-  if (where && where.file in state.files) {
-    text.append(" ", el("a", { href: "#", onclick: (e) => { e.preventDefault(); openFile(where.file, where.line); } }, `Show ${where.file}:${where.line}`));
-  }
+  text.replaceChildren([state.resultNote, message].filter(Boolean).join(" "));
+  const where = r.status === "error" ? errorLocation(r.message) : null;
+  if (where && where.file in state.files && !stale) text.append(" ", el("button", { type: "button", class: "quiet", onclick: () => openFile(where.file, where.line) }, "Inspect code"));
   $("why").hidden = !r.why;
-  $("whytree").replaceChildren(...(r.why ? [whyStep(r.why)] : []));
+  if (shownWhy !== r) {
+    shownWhy = r;
+    $("explanation").replaceChildren(...(r.why ? [explainStep(r.why)] : []));
+    $("whytree").replaceChildren(...(r.why ? [whyStep(r.why)] : []));
+  }
+  for (const button of $("explanation").querySelectorAll("button[data-trace-action]")) button.disabled = stale;
+  for (const link of $("whytree").querySelectorAll("a")) {
+    link.setAttribute("aria-disabled", String(stale));
+    link.dataset.stale = String(stale);
+  }
+}
+function traceIsCurrent() { return state.resultKey === view.projectKey(state.files); }
+function inspectExamples(s, edit) {
+  if (!traceIsCurrent()) return;
+  const f = functionFor(s.function);
+  if (!f) return;
+  selectView("functions");
+  const match = view.identity(s, f);
+  if (edit && match) state.editing = { fn: f.qualified, call: match.call };
+  renderFunctions();
+  const card = document.querySelector(`article.fn[data-fn="${CSS.escape(f.qualified)}"]`);
+  card?.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (edit && match) focusRow(f.qualified, "tr.editing");
+}
+function explainStep(s, depth = 0) {
+  const f = functionFor(s.function);
+  const label = view.title(s.function || s.call);
+  const origin = view.origins[s.source] || "No answer";
+  const outcome = view.outcome(s);
+  const values = view.inputs(s);
+  const node = el("details", { class: "explain-node", "data-origin": s.source, open: depth < 2 && Boolean(s.steps?.length) },
+    el("summary", {}, el("span", { class: "node-heading" }, el("span", { class: "node-title" }, label), el("span", { class: "origin" }, origin)),
+      el("span", { class: "node-value" }, values || s.call, el("span", { class: "node-arrow", "aria-label": "returns" }, " → "), el("strong", {}, s.failed ? (view.outcome(s).includes("Waiting") || s.source === "unknown" ? "Waiting" : "No result") : view.readable(s.output))),
+      outcome ? el("span", { class: "node-outcome" }, outcome) : null));
+  let description = f?.description || "Inspect this function's examples or its code.";
+  if (s.source === "example") description = "A saved example answers this exact input. No code ran for this step.";
+  if (s.source === "unknown") description = "This input has no saved answer and no implementation. Supply its answer to continue.";
+  if (s.error) description = s.error;
+  const actions = el("div", { class: "node-actions" });
+  if (s.source === "unknown" || s.source === "unconfirmed code" || s.source === "proposed") {
+    actions.append(el("button", { type: "button", class: "quiet", "data-trace-action": "question", onclick: () => {
+      if (!traceIsCurrent()) return;
+      const question = (state.snapshot?.questions || []).find(q => q.function === s.function && (s.inputs || []).every(n => q.input?.[n] === s.input?.[n]));
+      const q = question && document.querySelector(`[data-question="${CSS.escape(question.call)}"]`);
+      q?.scrollIntoView({ behavior: "smooth", block: "center" }); q?.querySelector("input")?.focus();
+    } }, s.source === "unknown" ? "Answer this question" : "Review suggested answers"));
+  }
+  if (f) actions.append(el("button", { type: "button", class: "quiet", "data-trace-action": "examples", onclick: () => inspectExamples(s, s.source === "example") }, s.source === "example" ? "Edit this saved answer" : "See examples"));
+  if (s.path) actions.append(el("button", { type: "button", class: "quiet", "data-trace-action": "code", onclick: () => { if (traceIsCurrent()) openFile(s.path, s.line); } }, s.source === "example" ? "See source" : "View code"));
+  node.append(el("div", { class: "node-detail" }, el("p", {}, description), actions));
+  if (s.steps?.length) node.append(el("div", { class: "node-children" }, s.steps.map(child => explainStep(child, depth + 1))));
+  return node;
 }
 
 // whyStep renders one call of a run's provenance tree (park run --why): the
@@ -455,7 +592,7 @@ function whyStep(s) {
     el("div", { class: "step" },
       el("code", {}, s.call, el("span", { class: "eq" }, " = "), el("b", {}, s.output)),
       el("span", { class: "src src-" + source.replace(/ /g, "-") }, source),
-      where ? el("a", { href: "#", onclick: (e) => { e.preventDefault(); openFile(s.path, s.line); } }, where) : null),
+      where ? el("a", { href: "#", onclick: (e) => { e.preventDefault(); if (traceIsCurrent()) openFile(s.path, s.line); } }, where) : null),
     s.error ? el("p", { class: "step-error" }, s.error.split("\n")[0]) : null,
     s.steps?.length ? el("ul", {}, s.steps.map(whyStep)) : null);
 }
@@ -480,10 +617,11 @@ async function run(text) {
 
 async function answer(line) {
   const r = await call("addExample", line);
-  if (r.status !== "ok") { showResult(r); return; }
+  if (r.obsolete || r.status !== "ok") return r;
   // Resume: rerun the call that raised the question, now that it's answered.
-  if (state.lastCall) showResult(await call("run", state.lastCall), `Answered ${line.split(" == ")[0]}, then reran ${state.lastCall}.`);
+  if (state.lastCall) showResult(await call("run", state.lastCall), "Saved your example and reran the original request.");
   else showResult(r);
+  return r;
 }
 
 async function dismiss(callText) {
@@ -495,6 +633,7 @@ async function dismiss(callText) {
 function openFile(name, line) {
   if (!(name in state.files)) return;
   state.active = name;
+  toggleCode(true);
   render();
   if (line) editor.goto(line);
 }
@@ -514,12 +653,15 @@ function addFile() {
 let loadTimer = 0;
 function edited() {
   state.files[state.active] = editor.get();
+  renderResult();
+  $("test-stale").hidden = !state.testKey || state.testKey === view.projectKey(state.files);
   save();
   clearTimeout(loadTimer);
   loadTimer = setTimeout(() => call("load"), 300);
 }
 
 function loadProject({ files, call: callText = "", active = "", sample = 0, sampleName }) {
+  state.projectID++;
   state.files = { ...files };
   state.active = active in files ? active : Object.keys(files).filter((n) => n.endsWith(".star")).sort()[0] || "";
   // Older saves used picker positions. Keep Reset tied to the original
@@ -534,8 +676,11 @@ function loadProject({ files, call: callText = "", active = "", sample = 0, samp
   state.editing = null;
   state.drafts = {};
   state.note = null;
+  state.result = null;
+  state.testKey = "";
+  state.questionDrafts = {};
   editor.reset();
-  $("call").value = callText;
+  setCall(callText);
   $("result").hidden = true;
   $("testout").replaceChildren();
   return call("load");
@@ -556,6 +701,9 @@ function selectView(view) {
 
 async function runTests() {
   const r = await call("test");
+  if (r.obsolete) return;
+  state.testKey = r.projectKey || view.projectKey(state.files);
+  $("test-stale").hidden = state.testKey === view.projectKey(state.files);
   $("testout").replaceChildren(...(r.lines || []).map((l) => el("div", { class: l.failed ? "fail" : "" }, l.text)), el("div", {}, r.message || ""));
 }
 
@@ -644,7 +792,7 @@ const ROLES = { ops: "Ops", dev: "Developer" };
 // Places a step can point at, by name, so tours don't depend on page layout.
 const POINTS = {
   run: () => document.querySelector("#runform button[type=submit]"),
-  call: () => $("call"),
+  call: () => state.friendlyInput ? $("expression") : $("call"),
   result: () => $("result"),
   why: () => $("why"),
   questions: () => $("questions"),
@@ -684,7 +832,9 @@ function enterStep(i, { check = true } = {}) {
   tourTimer = 0;
   state.tour.step = i;
   const step = currentStep();
-  if (step.call) { $("call").value = step.call; }
+  if (step.call) setCall(step.call);
+  renderInput();
+  if (step.point?.includes("why")) $("why").open = true;
   if (step.open) { const [file, line] = step.open.split(":"); openFile(file, Number(line) || 0); }
   if (step.point?.some((p) => p === "functions" || p.startsWith("function:"))) selectView("functions");
   renderTour();
@@ -747,7 +897,7 @@ async function skipStep() {
   let ok = true;
   for (const op of step.skip || []) {
     let r;
-    if (op.run) { state.lastCall = op.run; $("call").value = op.run; r = await call("run", op.run); showResult(r); }
+    if (op.run) { state.lastCall = op.run; setCall(op.run); r = await call("run", op.run); showResult(r); }
     else if (op.addExample) r = await call("addExample", op.addExample);
     else if (op.dismiss) r = await call("dismiss", op.dismiss);
     else if (op.paste) { selectView("functions"); r = await call("pasteExamples", op.paste.function, op.paste.text); }
@@ -823,6 +973,34 @@ function savedTour() {
 // ---- Startup --------------------------------------------------------------
 
 async function start() {
+  $("welcome").open = preferences.welcome !== false;
+  $("why").open = preferences.explanation !== false;
+  toggleCode(preferences.code === true, false);
+  $("code-toggle").addEventListener("click", () => toggleCode($("source-pane").hidden));
+  $("code-close").addEventListener("click", () => { toggleCode(false); $("code-toggle").focus(); });
+  $("welcome").addEventListener("toggle", () => { preferences.welcome = $("welcome").open; savePreferences(); renderInput(); });
+  $("why").addEventListener("toggle", () => { preferences.explanation = $("why").open; savePreferences(); });
+  $("welcome-tour").addEventListener("click", () => startTour(tours()[0]?.id));
+  $("expression").addEventListener("input", () => {
+    $("call").value = `WordAdd.eval(${JSON.stringify($("expression").value)})`;
+    save(); renderResult();
+  });
+  $("input-toggle").addEventListener("click", () => {
+    if (state.friendlyInput) { state.friendlyInput = false; preferences.rawCall = true; }
+    else {
+      const expression = view.expressionFromCall($("call").value);
+      if (expression === null) { toast("Use a WordAdd.eval call with one quoted text input to switch to expression entry."); return; }
+      $("expression").value = expression; state.friendlyInput = true; preferences.rawCall = false;
+    }
+    renderInput(); savePreferences();
+    (state.friendlyInput ? $("expression") : $("call")).focus();
+  });
+  for (const button of document.querySelectorAll("[data-expression]")) button.addEventListener("click", () => {
+    setCall(`WordAdd.eval(${JSON.stringify(button.dataset.expression)})`);
+    renderInput();
+    renderResult(); save();
+    (state.friendlyInput ? $("expression") : $("call")).focus();
+  });
   const picker = $("sample");
   picker.append(el("option", { value: "-1", disabled: true }, "Shared project"));
   globalThis.PARK_SAMPLES.forEach((s, i) => picker.append(el("option", { value: i }, s.name)));
@@ -834,7 +1012,7 @@ async function start() {
   $("download").addEventListener("click", download);
   $("stop").addEventListener("click", () => engine.stop());
   $("runform").addEventListener("submit", (e) => { e.preventDefault(); run($("call").value); });
-  $("call").addEventListener("input", save);
+  $("call").addEventListener("input", () => { save(); renderResult(); });
   editor.onEdit(edited);
   $("test").addEventListener("click", runTests);
   picker.append(el("option", { value: String(TOUR_SAMPLE), disabled: true }, "Guided tour"));
@@ -861,7 +1039,7 @@ async function start() {
     return;
   }
   // Opening order: a share link, a tour link, a tour in progress, the saved
-  // project, and on a first visit, the tour.
+  // project, and on a first visit, the default sample with an optional guide.
   let project = null;
   try {
     project = await readShared();
@@ -881,7 +1059,7 @@ async function start() {
     enterStep(state.tour.step, { check: false });
   }
   else if (hasFiles(own)) await loadProject(own);
-  else if (!(tours().length && await startTour(tours()[0].id))) await loadSample(0);
+  else await loadSample(0);
   $("loading").hidden = true;
 }
 

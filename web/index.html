@@ -15,6 +15,7 @@
     <select id="sample"></select>
   </label>
   <div class="actions">
+    <button id="code-toggle" type="button" class="quiet" aria-expanded="false" aria-controls="source-pane">Show code</button>
     <button id="tourbtn" type="button" class="quiet" title="A two-minute guided tour">Tour</button>
     <button id="share" type="button" class="quiet" title="Copy a link that holds this whole project">Share</button>
     <button id="download" type="button" class="quiet" title="Download the project as a zip the park CLI can open">Download</button>
@@ -23,11 +24,7 @@
 </header>
 
 <main class="layout">
-  <section class="pane source" aria-label="Source files">
-    <div class="tabs" id="tabs" role="tablist"></div>
-    <textarea id="editor" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Source"></textarea>
-    <p id="problem" class="problem" role="status" hidden></p>
-  </section>
+
 
   <section class="pane work" aria-label="Run and answer">
     <section id="tour" class="tourpanel" hidden aria-live="polite" aria-label="Guided tour">
@@ -49,37 +46,82 @@
         <button type="button" class="quiet" id="tourexit">Exit tour</button>
       </div>
     </section>
+    <details id="welcome" class="welcome" open>
+      <summary>Examples, rules, and one missing answer</summary>
+      <div class="welcome-body">
+        <p>Write down answers you know. Code combines them. When an answer is missing, Park asks you.</p>
+        <ol class="welcome-steps">
+          <li><strong>Save an answer</strong><span>“eleven” means 11.</span></li>
+          <li><strong>Use a rule</strong><span>Combine “twenty” and “two.”</span></li>
+          <li><strong>Fill a gap</strong><span>Add “twelve” once; reuse it.</span></li>
+        </ol>
+        <button id="welcome-tour" type="button" class="quiet">Walk me through it</button>
+      </div>
+    </details>
+    <section class="try-area" aria-labelledby="try-heading">
+    <div class="section-heading"><div><p class="eyebrow">Try it</p><h2 id="try-heading">An answer you can explain</h2></div><button id="input-toggle" type="button" class="quiet" hidden>Use a function call</button></div>
     <form id="runform" class="runbox">
+      <div id="expression-entry" class="entry" hidden>
+        <label for="expression">Your addition</label>
+        <input id="expression" spellcheck="false" autocomplete="off" placeholder="twenty-two plus eleven" aria-describedby="input-help">
+      </div>
+      <div id="call-entry" class="entry">
       <label for="call">Call</label>
       <input id="call" spellcheck="false" autocomplete="off" placeholder='WordAdd.eval("twenty-two plus eleven")'>
-      <button type="submit">Run</button>
+      </div>
+      <button type="submit">Calculate</button>
       <button id="stop" type="button" class="quiet" hidden>Stop</button>
     </form>
+    <p id="input-help" class="hint">Choose an input, run it, and see where the answer came from.</p>
+    <div id="try-suggestions" class="try-suggestions" hidden aria-label="Expressions to try">
+      <span>Try another:</span>
+      <button type="button" class="quiet" data-expression="twenty-two plus eleven">A calculation</button>
+      <button type="button" class="quiet" data-expression="twenty-two plus twelve">A missing meaning</button>
+      <button type="button" class="quiet" data-expression="twelve plus two">Reuse your answer</button>
+    </div>
     <div id="result" class="result" hidden>
+      <p id="result-input" class="result-input"></p>
       <span id="status" class="badge"></span>
-      <code id="output"></code>
+      <output id="output" aria-live="polite" tabindex="-1"></output>
+      <p id="result-stale" class="stale" hidden></p>
       <p id="message"></p>
-      <div id="why" class="why" hidden>
-        <h3>Why this answer</h3>
-        <ul id="whytree" class="tree"></ul>
-      </div>
+      <details id="why" class="why" open hidden>
+        <summary>How this answer was made</summary>
+        <p class="hint explanation-help">Each step contains the smaller answers it used. Select a step to inspect its example or rule.</p>
+        <div id="explanation" class="explanation"></div>
+        <details class="raw-trace"><summary>Execution details</summary><ul id="whytree" class="tree"></ul></details>
+      </details>
     </div>
 
-    <h2>Questions <span id="qcount" class="count"></span></h2>
-    <p class="hint" id="qhint">Calls Park couldn't answer, and answers from code that isn't confirmed yet.</p>
-    <ul id="questions" class="questions"></ul>
+    </section>
 
+    <section id="questions-section" class="questions-section" aria-labelledby="questions-heading">
+    <h2 id="questions-heading">Answers Park needs <span id="qcount" class="count"></span></h2>
+    <p class="hint" id="qhint">No questions yet. Try an input to see what Park knows.</p>
+    <ul id="questions" class="questions"></ul>
+    </section>
+
+    <div class="section-heading examples-heading"><div><p class="eyebrow">Work with examples</p><h2>Saved answers and rules</h2></div><p class="hint">Edit a row or add an answer. Your changes stay in this browser.</p></div>
     <div class="tabs" role="tablist">
-      <button type="button" class="tab" data-view="functions" aria-selected="true">Functions</button>
-      <button type="button" class="tab" data-view="catalog" aria-selected="false">park.html</button>
-      <button type="button" class="tab" data-view="tests" aria-selected="false">Tests</button>
+      <button type="button" class="tab" data-view="functions" aria-selected="true">Example tables</button>
+      <button type="button" class="tab" data-view="catalog" aria-selected="false">Catalog</button>
+      <button type="button" class="tab" data-view="tests" aria-selected="false">Checks</button>
     </div>
     <div id="view-functions" class="view"></div>
     <div id="view-catalog" class="view" hidden><iframe id="catalog" title="Generated catalog" sandbox="allow-same-origin"></iframe></div>
     <div id="view-tests" class="view" hidden>
-      <button id="test" type="button">Run park test</button>
-      <pre id="testout" class="testout"></pre>
+      <p class="hint">Check that rules agree with their saved examples. Example-only tables are reported as data.</p>
+      <button id="test" type="button">Check rules against examples</button>
+      <p id="test-stale" class="stale" hidden>The project changed. Run the checks again.</p>
+      <pre id="testout" class="testout" aria-live="polite"></pre>
     </div>
+  </section>
+
+  <section id="source-pane" class="pane source" hidden aria-label="Source files">
+    <div class="source-heading"><h2>Code workspace</h2><button id="code-close" type="button" class="quiet">Hide code</button></div>
+    <div class="tabs" id="tabs" role="tablist"></div>
+    <textarea id="editor" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Source"></textarea>
+    <p id="problem" class="problem" role="status" hidden></p>
   </section>
 </main>
 
@@ -89,6 +131,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
 <script src="samples.js"></script>
 <script src="tours.js"></script>
+<script src="presentation.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
