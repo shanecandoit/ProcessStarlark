@@ -1,0 +1,181 @@
+{
+  "title": "Answer a shipping question in an isolated draft",
+  "reference": "examples/shipping",
+  "steps": [
+    {
+      "title": "Create a draft from the unchanged reference",
+      "method": "POST",
+      "path": "/api/v1/drafts",
+      "body": {
+        "id": "{draft}",
+        "name": "Add Germany shipping",
+        "author": "ops"
+      },
+      "expect": {
+        "status": 201,
+        "json": {
+          "/draft/version": 0,
+          "/draft/created_by": "ops"
+        }
+      }
+    },
+    {
+      "title": "Ask for a quote; Park needs Germany's zone",
+      "method": "POST",
+      "path": "/api/v1/drafts/{draft}/operations",
+      "body": {
+        "author": "ops",
+        "expected_version": 0,
+        "operation": {
+          "kind": "run",
+          "call": "Shipping.quote(\"DE\", 800)"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "json": {
+          "/draft/version": 1,
+          "/result/status": "unresolved",
+          "/draft/snapshot/questions/0/function": "Zones.zone",
+          "/draft/snapshot/questions/0/input/country": "\"DE\""
+        }
+      }
+    },
+    {
+      "title": "Save Germany's zone as an example",
+      "method": "POST",
+      "path": "/api/v1/drafts/{draft}/operations",
+      "body": {
+        "author": "ops",
+        "expected_version": 1,
+        "operation": {
+          "kind": "add-example",
+          "example": "Zones.zone(\"DE\") == \"international\""
+        }
+      },
+      "expect": {
+        "status": 200,
+        "json": {
+          "/draft/version": 2,
+          "/result/status": "ok",
+          "/draft/snapshot/questions": []
+        }
+      }
+    },
+    {
+      "title": "Rerun the quote using the new answer",
+      "method": "POST",
+      "path": "/api/v1/drafts/{draft}/operations",
+      "body": {
+        "author": "ops",
+        "expected_version": 2,
+        "operation": {
+          "kind": "run",
+          "call": "Shipping.quote(\"DE\", 800)"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "json": {
+          "/draft/version": 3,
+          "/result/status": "ok",
+          "/result/output": "2799"
+        }
+      }
+    },
+    {
+      "title": "Check every implemented rule against its examples",
+      "method": "POST",
+      "path": "/api/v1/drafts/{draft}/operations",
+      "body": {
+        "author": "developer",
+        "expected_version": 3,
+        "operation": {
+          "kind": "test"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "json": {
+          "/draft/version": 4,
+          "/result/status": "ok"
+        }
+      }
+    },
+    {
+      "title": "Review changed source and affected function versions",
+      "method": "GET",
+      "path": "/api/v1/drafts/{draft}/diff",
+      "expect": {
+        "status": 200,
+        "json": {
+          "/draft_version": 4,
+          "/files_changed": [
+            "zones.star"
+          ],
+          "/files_deleted": [],
+          "/function_changes/0/qualified": "Shipping.quote",
+          "/function_changes/1/qualified": "Zones.zone",
+          "/function_changes/1/examples_added": 1,
+          "/function_changes/1/body_changed": false
+        }
+      }
+    },
+    {
+      "title": "Reject a stale edit; keep the reviewed draft unchanged",
+      "method": "POST",
+      "path": "/api/v1/drafts/{draft}/operations",
+      "body": {
+        "author": "other-editor",
+        "expected_version": 1,
+        "operation": {
+          "kind": "add-example",
+          "example": "Zones.zone(\"JP\") == \"international\""
+        }
+      },
+      "expect": {
+        "status": 409,
+        "json": {
+          "/draft/version": 4
+        }
+      }
+    },
+    {
+      "title": "Read the operation history without changing the draft",
+      "method": "GET",
+      "path": "/api/v1/drafts/{draft}?history=true",
+      "expect": {
+        "status": 200,
+        "json": {
+          "/draft/version": 4,
+          "/draft/history/0/author": "ops",
+          "/draft/history/3/author": "developer",
+          "/draft/snapshot/questions": []
+        }
+      }
+    },
+    {
+      "title": "Check that the reference source is still unchanged",
+      "method": "GET",
+      "path": "/api/v1/base",
+      "expect": {
+        "status": 200,
+        "json": {
+          "/snapshot/questions": [],
+          "/snapshot/valid": true
+        },
+        "reference_unchanged": true
+      }
+    },
+    {
+      "title": "Export a normal Park project before stopping the service",
+      "method": "GET",
+      "path": "/api/v1/drafts/{draft}/export",
+      "expect": {
+        "status": 200,
+        "archive_member": "park-project/zones.star",
+        "archive_contains": "zone(\"DE\")"
+      }
+    }
+  ]
+}

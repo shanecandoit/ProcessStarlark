@@ -603,3 +603,26 @@ func (p *Project) Function(qualified string) (*Process, *Function, error) {
 	}
 	return proc, f, nil
 }
+
+// FindFunction returns the function for a qualified name, or nil if not found.
+// Unlike Function, it does not return an error.
+func (p *Project) FindFunction(qualified string) *Function {
+	parts := strings.Split(qualified, ".")
+	if len(parts) != 2 {
+		return nil
+	}
+	proc := p.Processes[parts[0]]
+	if proc == nil {
+		return nil
+	}
+	return proc.Functions[parts[1]]
+}
+
+// Body returns the function's source code as written, using the project's files.
+func (p *Project) Body(qualified string) string {
+	proc, f, err := p.Function(qualified)
+	if err != nil {
+		return ""
+	}
+	return p.Code(proc, f)
+}

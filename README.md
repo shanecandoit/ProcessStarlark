@@ -169,6 +169,21 @@ in the sample picker and in `fixtures/roman/`; use `--root fixtures/roman`
 before the CLI command to try them. Saved browser projects and tour progress
 still take precedence over the first-visit default.
 
+## Try an isolated draft
+
+The local SaaS prototype lets you edit an isolated copy of the shipping
+project, retain questions and history, check rules, review a diff, and export
+it. Start it from the repository root:
+
+```sh
+go run ./cmd/park-drafts --root examples/shipping
+```
+
+In another terminal, run `python3 scripts/draft_walkthrough.py`. Follow the
+[draft guide](docs/saas-usage.md) to export a project before stopping: draft
+storage is in memory. Accounts, production promotion, and durable hosted
+storage are planned; the existing playground is separate from this API.
+
 ## Learn more
 
 - [Park for business teams](docs/for-business.md): the idea without code,
@@ -179,8 +194,10 @@ still take precedence over the first-visit default.
 - [Sample projects](docs/ideas-sample-projs.md): word-number addition, a game,
   a business tool, and geometry, each runnable from [`examples/`](examples).
 - [Implementation plan](plan.md): the full contract.
-- [SaaS product plan](docs/plan-saas.md): draft→prod promotion with per-function versioning.
-- [SaaS usage guide](docs/saas-usage.md): CLI commands for draft→production workflow.
+- [SaaS product plan](docs/plan-saas.md): implemented draft foundations and the
+  roadmap for authenticated collaboration and reviewed production releases.
+- [Draft usage guide](docs/saas-usage.md): run the local API and a tested
+  shipping walkthrough, review changes, and export your project.
 - [Browser playground](docs/plan-web-playground.md): how the playground is
   built, and what's next for it. [Guided tours](docs/plan-guided-tours.md) are
   available for addition and shipping.

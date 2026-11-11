@@ -1,419 +1,220 @@
-# Plan: SaaS Product (Draft → Production Promotion)
-
-Status: **Phase 0 complete (2026-11-11)**, Phases 1-5 planned. Builds on per-function content hashing (D406-409 in design.md) and the product path in ideas-direction.md.
-
-Run the current playground locally:
-```sh
-sh serve.sh        # http://localhost:8000
-```
-Live at <https://shanecandoit.github.io/ProcessStarlark/> (GitHub Pages, rebuilt on every push to `main`).
-
----
-
-## Phase 0: Foundation — Function Versioning ✅ COMPLETE
-
-**Goal:** Every function gets a stable, content-addressed hash. Editing one function invalidates only it and its callers.
-
-| Task | Status | Demo |
-|------|--------|------|
-| `internal/engine/version.go`: `FunctionVersion` struct, hash computation | ✅ Done | CLI: `park version list` shows hash per function |
-| Normalize Starlark body (strip whitespace, sort deps, canonicalize names) | ✅ Done | `park version diff` shows semantic diff (ignores formatting) |
-| Dependency graph: compute transitive closure of caller hashes | ✅ Done | Edit `zone()` → `quote()` hash changes, `WordValues.value()` unchanged |
-| `engine.Cache` keyed by `(fnHash, inputHash)` instead of project revision | ✅ Done | Cache hit rate demo: edit unrelated function → zero cache invalidation |
-| Intra-process dependency detection (function A calls B in same process) | ✅ Done | Recursive functions handled without false cycle detection |
-| Persist versions to DB (PostgreSQL: `function_versions` table) | 📋 Planned Phase 1 | Survives restart; `park build` loads from DB not filesystem |
-
-**Acceptance:** All tests pass; `park run --why` shows function hash in tree; cache invalidation granularity verified by integration test (`TestCacheInvalidationGranularity`).
-
-**Effort:** Completed in ~1 week (vs 2-3 planned).
-
----
-
-## Quick Start: Using the CLI Version Commands
-
-```bash
-# List all functions with their content hashes, readiness status, and example counts
-park version list
-
-# Show semantic diff between two project states (not yet implemented)
-park version diff
-```
-
-### Example Output
-
-```bash
-$ park version list
-NumberWords.parse  a8cd0b645892  ready  2 examples
-WordAdd.eval       25ea8ced49e9  ready  2 examples
-WordValues.value   892a0e1204d3  example-only  27 examples
-```
-
-**Columns:**
-- **Function** — Qualified name (Process.function)
-- **Hash** — First 12 chars of SHA256 content hash
-- **Status** — `ready` (≥2 examples, implemented), `needs-examples` (<2 examples, implemented), `example-only` (no body)
-- **Examples** — Count of authored examples
-
-### How Hashes Work
-
-The hash is computed from:
-1. **Function signature** — name, inputs, output
-2. **Normalized body** — whitespace-insensitive, deterministic formatting
-3. **Authored examples** — canonical input + output pairs (sorted by input key)
-4. **Dependency hashes** — hashes of all called functions (transitive)
-
-**Key property:** Same source = same hash. Editing `Zones.zone` changes its hash, which changes `Shipping.quote`'s hash (since it calls `Zones.zone`), but `WordValues.value` stays the same.
-
-### Cache Invalidation Granularity
-
-```bash
-# Before: all functions have stable hashes
-$ park version list
-Shipping.quote  6e0e1a540d50  ready  3 examples
-Zones.zone      d62382e09893  example-only  4 examples
-
-# Add Germany to zone table (edit Zones.zone only)
-$ park example add 'Zones.zone("DE") == "international"'
-
-# Only Zones.zone and Shipping.quote hashes change
-$ park version list
-Shipping.quote  28f0174b21ff  ready  3 examples    # CHANGED (depends on Zones.zone)
-Zones.zone      fe5d6e2c7610  example-only  5 examples  # CHANGED
-
-# Restore, add example to Shipping.quote only
-$ park example add 'Shipping.quote("DE", 800) == 2799'
-
-# Only Shipping.quote changes; Zones.zone unchanged
-$ park version list
-Shipping.quote  a08bb447e2cc  ready  4 examples    # CHANGED
-Zones.zone      d62382e09893  example-only  4 examples  # UNCHANGED ✓
-```
-
-This enables **atomic promotion with minimal cache invalidation** — only the changed function and its transitive callers get new hashes.
-
----
-
-### Phase 1: Draft Workspace API & Playground Integration
-
-**Goal:** A mutable workspace where business users edit tables, developers edit code, both see live test results.
-
-| Task | Demo |
-|------|------|
-| `internal/workspace/draft.go`: in-memory `DraftWorkspace` (extends existing `internal/workspace`) | Playground: "Draft" toggle switches to mutable workspace |
-| REST API: `POST /api/v1/draft/files`, `GET /api/v1/draft/snapshot`, `POST /api/v1/draft/run`, `POST /api/v1/draft/test` | `curl` script: create draft → edit zone table → run quote → see `--why` |
-| Playground integration: "Open in Draft" button, auto-save to localStorage, shareable draft links | Share a draft link; recipient sees same tables + code, can edit |
-| Table editor (D21) connected to draft workspace: edits write to draft, not prod | Paste spreadsheet rows into zone table → new examples in draft |
-| Developer view: code editor + inline test results (green/red per example) | Edit pricing rule → test panel updates → all green → "Request Promotion" |
-
-**Acceptance:** Two users (ops + dev) can concurrently edit same draft via playground; `park test` runs on every change; draft link preserves state.
-
-**Effort:** 2 weeks
-
-**Demo script (recordable):**
-1. Ops opens draft link → adds Germany to zone table → sees `quote(DE, 800)` unresolved
-2. Dev opens same link → sees question in panel → adds pricing rule for international
-3. Both see `park test` pass → click "Request Promotion" → promotion request created
-
----
-
-### Phase 2: Promotion Flow (Draft → Production)
-
-**Goal:** Safe, auditable, atomic promotion with approvals.
-
-| Task | Demo |
-|------|------|
-| Promotion Request resource: `{ id, functions[], requestedBy, testResults, diff, status }` | UI: "Promotion Requests" list with status badges |
-| Diff engine: compare draft vs prod function hashes + example rows | Side-by-side diff: old zone table vs new, old pricing code vs new |
-| Approval workflow: required reviewers, `park test` gate, `--why` tree preview | Reviewer clicks request → sees `--why` for each changed function → Approve |
-| Atomic promote: copy function versions to prod workspace, update prod pointer | "Promote" button → instant; prod `/eval` serves new versions next request |
-| Rollback: one-click revert to any prior promoted hash | "Rollback" button on version history → prod serves old hash instantly |
-| Notification webhooks (Slack, email) on promotion/rollback | Slack: "Shipping.quote v10 → v12 promoted by @dev" |
-
-**Acceptance:** Promotion request requires 2+ examples per function + passing `park test`; atomic swap verified under concurrent load; rollback restores exact prior behavior.
-
-**Effort:** 2 weeks
-
-**Demo script:**
-1. Create promotion request for Shipping + Zones changes
-2. Reviewer sees diff: 3 new zone rows, pricing rule updated, 47 examples pass
-3. Click Approve → production instantly serves new versions
-4. Simulate traffic: `curl /eval` shows new results immediately
-5. Click Rollback → traffic reverts to prior version
-
----
-
-### Phase 3: Production Runtime (`/eval` Endpoint)
-
-**Goal:** Low-latency, horizontally scalable, per-function cached production evaluator.
-
-| Task | Demo |
-|------|------|
-| `cmd/park-saas-eval`: Go server with `internal/server/handler.go` | `hey -c 100 -n 10000 http://localhost:8080/eval` → p99 < 5ms |
-| Per-function cache (Redis or in-memory with TTL) keyed by `(fnHash, inputHash)` | Cache hit rate dashboard: 95%+ after warmup |
-| Cold-start: load promoted versions from function store at startup | Restart server → serves traffic in < 2s |
-| Unresolved calls → return 422 with question, auto-queue to draft workspace | `curl /eval` with unknown country → 422 + question appears in draft |
-| Metrics: latency, error rate, cache hit/miss, version served | Grafana dashboard per tenant |
-| Multi-tenant isolation: separate function stores, caches, rate limits | Tenant A edit doesn't affect Tenant B latency or data |
-
-**Acceptance:** 10k RPS sustained on 2 CPU cores; p99 < 10ms; zero draft code execution in prod; unresolved calls create draft questions.
-
-**Effort:** 1-2 weeks
-
-**Demo script:**
-1. Load test: 10k RPS quote requests → latency histogram
-2. Inject unknown country → 422 response + question appears in draft playground
-3. Answer question in draft → promote → production serves answer without restart
-
----
-
-### Phase 4: Observability & Operations
-
-**Goal:** Production-grade visibility, debugging, compliance.
-
-| Task | Demo |
-|------|------|
-| Version history UI: every promoted hash, author, timestamp, diff | "History" tab shows v1→v12 timeline with one-click diff |
-| `--why` in production: attach provenance to every `/eval` response (optional header) | `X-Park-Why: true` → response includes full call tree |
-| Audit log: immutable record of every promotion, rollback, example edit | Export CSV for compliance review |
-| Alerting: test failures in draft, promotion stalls, cache hit rate drops | PagerDuty: "Draft Shipping.quote test failing for 15min" |
-| Cost tracking: evals per tenant, cache size, storage | Monthly report: $/million evals |
-
-**Acceptance:** Full audit trail for any production answer; compliance export passes review.
-
-**Effort:** 1 week
-
----
-
-### Phase 5: Multi-Tenant SaaS Hardening
-
-**Goal:** Ready for paying customers.
-
-| Task | Demo |
-|------|------|
-| Auth: OAuth2/OIDC (GitHub, Google, SAML), API keys for `/eval` | "Sign in with GitHub" → lands in tenant dashboard |
-| Tenant provisioning: self-serve signup, trial limits, billing webhook (Stripe) | New tenant: 30s from signup to working draft |
-| Quotas: draft size, evals/month, concurrent promotions | Dashboard shows usage bars |
-| Data residency: EU/US region selection at tenant creation | "Create tenant in eu-central-1" |
-| SLA: 99.9% uptime, <100ms p99 `/eval`, 1hr RPO | Status page with real metrics |
-
-**Effort:** 2-3 weeks
-
----
-
-## Demo Matrix (What to Show When)
-
-| Audience | Phase 0 | Phase 1 | Phase 2 | Phase 3 | Phase 4 | Phase 5 |
-|----------|---------|---------|---------|---------|---------|---------|
-| **Internal eng** | `park version diff` cache granularity | Draft playground collab | Promotion atomic swap | Load test + 422→draft flow | Audit export | Self-serve signup |
-| **Business buyer** | — | Table editor + live test | "Request Promotion" button | — | Compliance audit trail | Pricing page + trial |
-| **Developer** | Hash stability | Code editor + inline tests | Review `--why` before approve | `/eval` latency + metrics | Debug production answer | API keys + docs |
-| **Investor** | — | "Two roles, one workspace" | "Zero-downtime deploy" | "10k RPS on laptop" | "SOC2-ready audit" | "Ready to sell" |
-
-**Priority order for maximum signal:**
-1. **Phase 1 Draft Playground** — visible, interactive, shows the core handoff
-2. **Phase 2 Promotion** — the "aha" moment: business edit → dev review → live in seconds
-3. **Phase 3 `/eval`** — proves it's not a toy; production-grade
-4. **Phase 0** — enable the above; demo internally first
-
----
-
-## Reusable Components (Already Built)
-
-| Component | Location | SaaS Role |
-|-----------|----------|-----------|
-| Starlark engine + dispatcher | `internal/engine/` | Core evaluation (draft + prod) |
-| `--why` provenance tree | `internal/engine/trace.go` | Review diff, production debug |
-| `internal/workspace` (in-memory) | `internal/workspace/` | Draft workspace ops |
-| `engine.Check` (`park test`) | `internal/engine/check.go` | Promotion gate |
-| Table editor (D21) | `web/presentation.js` | Business UI in draft |
-| Playground share/persist | `web/app.js` | Draft collaboration links |
-| Function signatures from code | `internal/project/` | Auto-discovery, no schema files |
-| `engine.Cache` interface | `internal/engine/` | Per-function cache impl |
-
----
-
-## Open Decisions (Resolve Before Phase 1)
-
-| Decision | Options | Recommendation |
-|----------|---------|----------------|
-| **Draft isolation** | Per-user branch vs shared draft with row locks | Start: shared draft + optimistic locking (last write wins + conflict banner) |
-| **Promotion granularity** | Single function vs transitive closure vs user-selected set | Transitive closure (safety); allow "promote all ready" button |
-| **Rollback strategy** | Instant hash pointer flip vs graceful drain | Instant flip (pure functions = safe); add `drainSeconds` config later |
-| **Canary releases** | Route % traffic to new hash | Phase 4+; start with feature flag per function |
-| **Secrets in examples** | Plaintext vs encrypted vs external reference | Phase 1: plaintext with warning; Phase 5: secret manager integration |
-| **Multi-region** | Active-passive vs active-active | Phase 5: active-passive per tenant; active-active later |
-
----
-
-## Success Criteria (Definition of Done per Phase)
-
-| Phase | Must Work | Metric |
-|-------|-----------|--------|
-| 0 | `park version list` shows hashes; edit A → only A+B invalidated | 0% unnecessary cache invalidation in integration test |
-| 1 | Two users edit same draft via playground; test runs on every keystroke | <500ms draft save → test result |
-| 2 | Promotion request created → reviewed → approved → prod serves new version | <5s promote latency; 0 failed promotions in chaos test |
-| 3 | `/eval` handles 10k RPS p99<10ms; unknown call → 422 + draft question | 95% cache hit rate after 1k warmup requests |
-| 4 | Any production answer traceable to promoted hash + author + timestamp | Audit export passes sample compliance review |
-| 5 | New tenant signup → working draft in <30s; Stripe webhook updates plan | 0 manual steps for trial provisioning |
-
----
-
-## Risks & Mitigations
-
-| Risk | Likelihood | Impact | Mitigation |
-|------|------------|--------|------------|
-| Function hashing instability (whitespace, reordering) | Medium | High | Canonicalize aggressively; test with `gofmt`-style normalizer |
-| Draft conflicts between ops + dev | High | Medium | Optimistic locking + conflict resolution UI; Phase 1 |
-| Promotion "works on draft, fails in prod" | Low | High | Identical engine (WASM + Go); prod reads same function store |
-| Cache stampede on cold start | Medium | Medium | Pre-warm cache on deploy; staggered rollout |
-| Tenant data leakage | Low | Critical | Row-level security in DB; integration test per tenant |
-| `park test` too slow for large projects | Medium | Medium | Parallel test execution; incremental (only changed functions) |
-
----
-
-## Next Steps
-
-1. **Approve this plan** — confirm scope, sequencing, resourcing
-2. **Spike Phase 0** — implement function hashing in `internal/engine/version.go` (1 week)
-3. **Design review** — hash algorithm, DB schema, API contracts
-4. **Kick off Phase 1** — draft workspace API + playground integration
-
----
-
-## Appendix: Minimal SaaS API Contract (v1)
-
-```yaml
-openapi: 3.0.1
-info:
-  title: Park SaaS API
-  version: 1.0.0
-paths:
-  /api/v1/draft/files:
-    post:
-      summary: Write a .star file to draft workspace
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [path, content]
-              properties:
-                path: {type: string}
-                content: {type: string}
-      responses:
-        '200': {description: Saved}
-  /api/v1/draft/snapshot:
-    get:
-      summary: Full project snapshot for playground
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Snapshot'
-  /api/v1/draft/run:
-    post:
-      summary: Execute a call in draft workspace
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [call]
-              properties:
-                call: {type: string}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RunResult'
-  /api/v1/draft/test:
-    post:
-      summary: Run park test in draft
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TestResult'
-  /api/v1/promotions:
-    post:
-      summary: Create promotion request
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [functions]
-              properties:
-                functions: {type: array, items: {type: string}}
-    get:
-      summary: List promotion requests
-  /api/v1/promotions/{id}:
-    get:
-      summary: Get promotion request with diff
-    post:
-      summary: Approve and promote
-  /api/v1/production/eval:
-    post:
-      summary: Production evaluation (API key auth)
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [call]
-              properties:
-                call: {type: string}
-      responses:
-        '200': {description: Result}
-        '422': {description: Unresolved - question queued to draft}
-  /api/v1/production/functions/{name}/versions:
-    get:
-      summary: Version history for a function
-  /api/v1/production/functions/{name}/rollback:
-    post:
-      summary: Rollback to specific version
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [versionHash]
-              properties:
-                versionHash: {type: string}
-
-components:
-  schemas:
-    Snapshot:
-      type: object
-      properties:
-        files: {type: object, additionalProperties: {type: string}}
-        questions: {type: array, items: {type: string}}
-        processes: {type: array, items: {$ref: '#/components/schemas/Process'}}
-    RunResult:
-      type: object
-      properties:
-        status: {type: string, enum: [ok, unconfirmed, unresolved, failed, error]}
-        output: {}
-        why: {$ref: '#/components/schemas/WhyTree'}
-        questions: {type: array, items: {type: string}}
-    TestResult:
-      type: object
-      properties:
-        passed: {type: boolean}
-        results: {type: array, items: {$ref: '#/components/schemas/TestCaseResult'}}
-    WhyTree:
-      type: object
-      properties:
-        call: {type: string}
-        output: {}
-        source: {type: string, enum: [example, code, unconfirmed, proposed, unknown]}
-        location: {type: string}
-        children: {type: array, items: {$ref: '#/components/schemas/WhyTree'}}
-```
-
----
-
-*This plan is a living document. Update as phases complete and decisions resolve.*
+# Plan: Park as a SaaS product
+
+Status: local draft API prototype implemented, 2026-11-11. Hosted accounts,
+durable storage, approvals, production releases, and billing are planned.
+The static playground and the local draft API are separate experiences today.
+
+Start with the [tested usage guide](saas-usage.md). Its
+[workflow data](tutorials/draft-workflow.json) is replayed by
+`internal/server/drafts_test.go` and `scripts/draft_walkthrough.py`.
+
+## Product outcome
+
+A rule owner supplies a missing answer, a developer checks the affected rules,
+and a reviewer can see exactly what would change before it reaches production.
+Every production answer should identify the release that supplied it. An edit
+in a draft must never change a live answer until an explicit release action.
+
+Number-word addition introduces examples versus rules. Shipping is the first
+business workflow: add Germany's zone, get a quote, check the rules, and review
+the source and affected function versions. A useful first session ends with a
+reusable answer, not merely a diagram or a version hash.
+
+## What exists now
+
+| Capability | State | Evidence |
+|---|---|---|
+| Pure evaluation, authoritative examples, questions, provenance | Implemented | Engine, CLI, playground, and their tests |
+| Approachable example tables and optional visual explanations | Implemented | Static playground; addition and shipping tours |
+| Function hashes and `park version list` | Implemented, experimental identity scheme | `internal/engine/version.go`; version tests |
+| Draft operations, snapshots, history, forking, source/function diff | Implemented in memory | `internal/workspace/draft.go` and regression tests |
+| Local HTTP draft service | Implemented | `go run ./cmd/park-drafts --root examples/shipping` |
+| Stale-write rejection | Implemented | Expected operation version checked under the draft lock; HTTP 409 |
+| Export a draft as an ordinary Park project | Implemented | ZIP export endpoint and walkthrough test |
+| Durable draft storage and authenticated collaboration | Planned | Required before a hosted pilot |
+| Review, promote, production evaluation, rollback | Planned | No production pointer or promotion command exists |
+| `park version diff` | Placeholder | Use the implemented draft diff endpoint today |
+
+There is no hosted account service or PostgreSQL/Redis store in this repository.
+In-memory history is an activity log, not a durable or tamper-proof audit log.
+Author names in the local API are supplied labels, not authenticated identities.
+A shared playground link contains a copy of a project; it is not collaborative
+access to a server draft.
+
+## First milestone: a usable local draft workflow
+
+**Implemented:**
+
+1. Start a service with a read-only reference project copied into memory.
+2. Create an isolated draft from that reference, or fork an existing draft.
+3. Run an input. Unresolved calls become questions in that draft only.
+4. Add an example or edit source files, with whole-project validation.
+5. Rerun the input and explicitly check implemented rules against examples.
+6. Review source changes and affected function hashes, including added and
+   removed examples. Dependency-only changes remain distinguishable from a
+   changed function body.
+7. Export code, examples, questions, and catalog before stopping the process.
+
+Each accepted operation advances the draft's integer version and records its
+actor label and actual changed files. Runs and checks are operations too, even
+when source is unchanged. The source revision is a separate content revision.
+GETs do not advance the operation version. Rejected operations leave the files,
+version, and history unchanged.
+
+Mutations hold the draft lock from version comparison through evaluation and
+commit. This prevents an old run or example edit from overwriting a newer edit.
+Different drafts can operate independently. This initial serialization trades
+throughput for a simple, testable consistency model; it is not a claim about
+real-time multi-user editing performance.
+
+The HTTP service accepts JSON requests up to 4 MiB and at most 16 drafts. The
+command binds only to loopback IPs. Requests from foreign browser origins are
+rejected; there are no CORS permissions. These development boundaries are not
+an authentication system. The service has no persistence and no integration
+with the playground worker yet.
+
+## Milestone 2: durable, authenticated pilot
+
+This comes before public exposure and production promotion, not after them.
+
+- Establish tenant, project, draft, and user membership. Author identity must
+  come from the authenticated principal, not a submitted JSON label.
+- Persist complete validated draft snapshots, operation versions, base
+  revisions, questions, and history. Verify restart recovery and backup restore.
+- Use a database compare-and-swap or equivalent transaction for version
+  checks and writes across multiple server processes.
+- Enforce tenant/project scope on every read, edit, diff, fork, export, and
+  eventual release operation. Test guessed IDs and cross-tenant references.
+- Set request, source, history, draft count, execution, and concurrency limits.
+  Apply cancellation and resource limits to queued as well as running work.
+- Connect the playground to these APIs behind an explicit server workspace
+  choice. Preserve the existing local browser project and download path.
+- Show save state, conflicts, unsaved work, and last checked revision clearly.
+  Retain local edits after a conflict; fetch and review the newer draft rather
+  than applying last-write-wins.
+
+Acceptance: two authorized users can edit and review a shared draft, stale
+writes are rejected without data loss, restarting recovers the exact state,
+and another tenant cannot observe any of it. Passing these tests is a release
+gate; an unauthenticated localhost demo does not satisfy it.
+
+## Milestone 3: reviewed releases
+
+Start with **immutable whole-project releases** and one atomic active-release
+pointer per project. This is easier to reason about than mixing independently
+selected function versions whose dependencies may no longer agree.
+
+A review request pins the draft version, source revision, full file snapshot,
+base release, diff, and check report. Any source change requires a new review;
+a production-base change requires an explicit rebase or a rejected activation.
+Approval checks and pointer replacement occur in a transaction. Two approvals
+must not race to overwrite the same production generation.
+
+Promotion gates:
+
+- source validates with the same runtime and limits used by evaluation;
+- every implemented function meets readiness policy and passes its examples;
+- example-only tables remain valid data and do not need two examples or code;
+- unresolved dependencies and unconfirmed check results block activation;
+- the check report belongs to the exact reviewed snapshot and runtime version;
+- the reviewer has the appropriate project role.
+
+Record the release manifest, authenticated requester/reviewer, checks, and
+previous active release. Rollback activates a prior complete release through
+the same guarded pointer update. Purity helps reproduce evaluation; it does
+not undo actions an external consumer already took based on earlier answers.
+
+Per-function promotion can follow after a dependency-closure model is proven.
+It must include required callees and affected callers and cannot rely on
+truncated display hashes. Approvals and notifications are distinct operations;
+webhooks are a later, explicitly configured integration.
+
+Acceptance: draft edits leave live evaluation unchanged, approved activation
+changes the entire project atomically, stale approvals cannot activate, and
+rollback restores the previous complete behavior under concurrent requests.
+
+## Version identity hardening before release storage or shared caches
+
+The current implementation is useful for inspecting changes, but needs more
+work before hashes become durable production identities:
+
+- Body normalization currently collapses whitespace textually. It must preserve
+  whitespace inside literals and the semantics of block indentation.
+- Private helpers, module constants, function values, and namespace references
+  must be included through resolved dependencies. Existing engine dependency
+  analysis should drive this instead of a second approximate call graph.
+- Cross-process dependency tracking is currently conservative; minimal cache
+  invalidation is not a guarantee. Recursive groups need an explicit strategy.
+- Runtime/hash-schema versions must be included where different semantics
+  could otherwise reuse the same cache key or stored identity.
+- Tenant-scoped cache keys must prevent cross-tenant value disclosure, even
+  when identical source produces identical hashes. Hashes are not permissions.
+
+Required regression cases include string-literal whitespace changes, moved
+blocks with changed behavior, helper/constant edits, aliases, recursive groups,
+format-only changes, and unrelated function edits. Until this is hardened,
+review full source diffs and do not use function hashes alone as release gates.
+The local draft service evaluates in-memory projects without the disk cache.
+
+## Milestone 4: production evaluation and operations
+
+Serve only an active immutable release, authenticated and scoped to its project.
+Return the release ID, outcome, and optional provenance. Keep a request pinned
+to one release even if another activates while it runs.
+
+A missing answer should return a structured unresolved outcome. If it creates
+work for a rule owner, deduplicate and scope that event to the originating
+project and release. It must not silently edit a draft or copy customer inputs
+into a broadly shared workspace. Decide retention and redaction with users.
+
+Measure latency, error/unknown rates, resource usage, and cache behavior on an
+agreed workload before setting capacity claims or SLOs. Add rate limits,
+backpressure, graceful shutdown, recovery drills, and release-aware logging.
+The previous speculative 10k RPS, millisecond, and cache-hit-rate figures were
+not measured acceptance evidence.
+
+## User journey and guidance
+
+| Person | First useful task | Guidance | Once familiar |
+|---|---|---|---|
+| Rule owner | Answer Germany's missing zone and reuse it | Table-first walkthrough, visible scope of saving | Compact tables, questions, and history |
+| Developer | Check a rule and inspect the affected callers | Code and provenance on demand | Editor, checks, diff, and API reference |
+| Reviewer | Understand a pinned change and its check results | Source/example changes, affected functions, exact revision | Review queue and release history, when implemented |
+| Operator | Recover a release or diagnose an unresolved input | Runbook with tested commands and recovery steps | Metrics, scoped logs, restore and rollback tools |
+
+The current guide must always distinguish browser-only exploration, the local
+API, and planned hosted behavior. It should include prerequisites, terminal
+commands, expected outcomes, recovery from a stale version, and export before
+shutdown. A failure must tell the user what can be retried and what stayed
+unchanged. Do not ask beginners to understand hashes before adding an answer.
+
+Keep introduction and visual explanations optional and remember disclosure
+choices. A visual node identifies an actual executed call; it should open an
+exact example or rule. Checks, draft save state, and release state are separate
+concepts. "Ready" means enough examples under policy, not "checked" or "live."
+
+## Verification and definition of done
+
+| Area | Current automated evidence | Remaining gate |
+|---|---|---|
+| Draft edits | Validation, rollback on rejection, true concurrent operations | Durable transactions across processes |
+| Snapshots | Files/history cannot mutate draft state; questions persist | Persistent history and retention |
+| Diff | Sorted output, full hashes, replacements and deleted functions | Hardened identity/dependencies and source diff UI |
+| API | Documented workflow, conflicts, malformed/oversized requests, fork isolation | Authenticated tenant scope and persistence |
+| User guide | Same JSON steps drive Python walkthrough and Go handler tests | Hosted UI walkthrough and user comprehension study |
+| Release | Not implemented | Pinned checks, roles, atomic activation, stale approvals, rollback |
+
+Run `go test ./...`, `go test -race ./internal/workspace ./internal/server`,
+`node --test web/presentation.test.js`, and `sh web/build.sh` before merging.
+Replay the guide against a real local service as well as the in-process tests.
+Do not claim hosted readiness, compliance, performance, or completed phases
+based only on the presence of a struct or a green example walkthrough.
+
+## Next implementation sequence
+
+1. Harden version identity and add the regression cases above.
+2. Choose a durable store and implement authenticated, scoped draft transactions.
+3. Connect the existing playground to that service with conflict recovery.
+4. Build pinned review requests and immutable whole-project releases.
+5. Add release-only evaluation and operational recovery, then consider billing
+   and additional integrations after the pilot workflow is demonstrated.

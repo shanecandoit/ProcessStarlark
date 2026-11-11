@@ -1,188 +1,214 @@
-# SaaS Tool Usage Guide
+# User guide: work on a rule in a draft
 
-This guide covers the CLI commands for the Park SaaS product's draft→production workflow.
+A draft lets you try a change without changing the reference project. In this
+walkthrough you add Germany's shipping zone, reuse it in a quote, check the
+rules, and review what changed.
 
-## Overview
+**Available today:** a browser playground and a local draft API prototype.
+**Planned:** hosted accounts, shared durable workspaces, review approvals,
+production promotion, and rollback. No command in this guide deploys a change.
 
-The SaaS workflow uses **content-addressed function versioning** to enable safe, granular promotion from draft to production:
+## Choose your starting point
 
-1. **Draft workspace** — Edit examples and code freely; hashes update on every change
-2. **Version inspection** — `park version list` shows current hashes and readiness
-3. **Promotion** — (Future) Atomic promote of changed functions + transitive callers
-4. **Production** — (Future) Serves only promoted hashes with per-function cache
+| Experience | Use it for | Where changes live |
+|---|---|---|
+| [Browser playground](https://shanecandoit.github.io/ProcessStarlark/) | Learn examples, rules, and questions without installing anything | This browser, with explicit share/download options |
+| Local draft API below | Try the draft workflow, conflict handling, diff, and export | Server memory until it stops |
+| Hosted SaaS | Future collaborative review and production releases | Not available yet |
 
-## Current Commands
+For a first introduction, use the playground's **Walk me through it** or
+[addition tour](https://shanecandoit.github.io/ProcessStarlark/#tour=addition).
+Enter `twenty-two plus eleven`, then try the missing twelve meaning. Saving
+`12` supplies one word meaning; other expressions can reuse it. You can close
+the guide and explanation, and reveal code when needed. Those preferences are
+remembered. The playground is not connected to the local draft API yet.
 
-### `park version list`
+## Run the complete draft walkthrough
 
-Shows all functions with their content hashes, readiness status, and example counts.
+You need a repository checkout, Go 1.26 or newer, and Python 3. There are no
+Python package dependencies. Run these commands from the repository root.
 
-```bash
-park version list
+**Terminal 1 — start the service:**
+
+```sh
+go run ./cmd/park-drafts --root examples/shipping
 ```
 
-**Output:**
-```
-NumberWords.parse  a8cd0b645892  ready  2 examples
-WordAdd.eval       25ea8ced49e9  ready  2 examples
-WordValues.value   892a0e1204d3  example-only  27 examples
-```
+It listens at `http://127.0.0.1:8081`. The shipping source is copied as the
+read-only reference; the service does not write into `examples/shipping`.
+This is a local development service without accounts or authentication.
+Actor names such as `ops` and `developer` are labels for the walkthrough.
 
-**Columns:**
-| Column | Meaning |
-|--------|---------|
-| Function | Qualified name (Process.function) |
-| Hash | First 12 chars of SHA256 content hash |
-| Status | `ready` (≥2 examples, implemented), `needs-examples` (<2 examples, implemented), `example-only` (no body) |
-| Examples | Count of authored examples |
+**Terminal 2 — follow the checked guide and save a copy:**
 
-### `park version diff`
-
-Shows semantic diff between two project states (planned, not yet implemented).
-
-```bash
-park version diff
+```sh
+draft_output_dir=$(mktemp -d)
+python3 scripts/draft_walkthrough.py --export "$draft_output_dir/shipping-draft.zip"
 ```
 
-## Understanding Function Hashes
+The script prints a generated draft ID and checks each of these outcomes:
 
-The hash is computed from:
-1. **Function signature** — name, inputs, output
-2. **Normalized body** — whitespace-insensitive, deterministic formatting
-3. **Authored examples** — canonical input + output pairs (sorted by input key)
-4. **Dependency hashes** — hashes of all called functions (transitive)
+1. **Create a draft:** an isolated copy of the shipping reference, version 0.
+2. **Ask for a quote:** `Shipping.quote("DE", 800)` asks for Germany's zone.
+3. **Supply one answer:** save `Zones.zone("DE") == "international"`.
+4. **Reuse the answer:** rerun the quote; it returns `2799` cents, or $27.99.
+5. **Check the rules:** the implemented pricing rule agrees with its examples.
+   The zone table is reported as example-only data, not as tested code.
+6. **Review the diff:** only `zones.star` changed. `Zones.zone` and its caller
+   `Shipping.quote` have affected function versions. The pricing body did not
+   change.
+7. **See conflict handling:** an intentionally stale edit gets HTTP 409 and
+   does not change the draft. This is an expected successful guide step.
+8. **Read history:** see which operations were labeled `ops` or `developer`.
+9. **Verify isolation:** the service reference is still unchanged.
+10. **Export:** save a normal Park project ZIP, including your new example.
 
-**Key property:** Same source = same hash. This enables:
-- Cache reuse across workspaces, tenants, time
-- Instant rollback (old hash = old behavior)
-- Granular promotion (only changed functions move)
+The exact requests and expected outcomes are in
+[the executable walkthrough](tutorials/draft-workflow.json). API tests replay
+that same file, so these steps are checked against the implementation.
+The guide uses a new ID on each run; `--draft-id my-shipping-draft` chooses one
+explicitly. Reusing an existing ID returns a conflict instead of replacing it.
 
-## Cache Invalidation Granularity
+**Open the exported project:**
 
-When you edit a function, only it and its **transitive callers** get new hashes:
-
-```bash
-# Initial state
-$ park version list
-Shipping.quote  6e0e1a540d50  ready  3 examples
-Zones.zone      d62382e09893  example-only  4 examples
-
-# Edit Zones.zone (add Germany)
-$ park example add 'Zones.zone("DE") == "international"'
-
-# Only Zones.zone and its caller Shipping.quote change
-$ park version list
-Shipping.quote  28f0174b21ff  ready  3 examples    # CHANGED (depends on Zones.zone)
-Zones.zone      fe5d6e2c7610  example-only  5 examples  # CHANGED
-
-# Restore, edit Shipping.quote only (add example)
-$ park example add 'Shipping.quote("DE", 800) == 2799'
-
-# Only Shipping.quote changes; Zones.zone unchanged
-$ park version list
-Shipping.quote  a08bb447e2cc  ready  4 examples    # CHANGED
-Zones.zone      d62382e09893  example-only  4 examples  # UNCHANGED ✓
+```sh
+unzip "$draft_output_dir/shipping-draft.zip" -d "$draft_output_dir"
+go run ./cmd/park --root "$draft_output_dir/park-project" test
+go run ./cmd/park --root "$draft_output_dir/park-project" run 'Shipping.quote("DE", 800)'
 ```
 
-This means production cache invalidation is **minimal and predictable**.
+The last command prints `2799`. You can edit this exported project with the
+ordinary CLI. Export preserves code, examples, open questions, and the catalog;
+it does not preserve server draft identity, operation history, or approvals.
 
-## Readiness States
+**Before stopping:** export any draft you want to keep. Stopping or restarting
+the API process discards its drafts. Export is not an automatic server backup,
+and starting with an exported project as `--root` creates a new reference;
+it does not activate production.
 
-| Status | Meaning | Caches Results? |
-|--------|---------|-----------------|
-| `ready` | Implemented + ≥2 examples | ✅ Yes |
-| `needs-examples` | Implemented but <2 examples | ❌ No (generates proposals) |
-| `example-only` | No implementation (`def f(x): pass`) | ❌ No (dispatches to examples) |
+## Understand what you are changing
 
-Only `ready` functions use the cache. Unready functions always execute and queue proposals for human confirmation.
+- An **example** answers one exact function input. Adding Germany to the zone
+  table supplies a reusable zone meaning, not a special price for one parcel.
+- A **rule** computes answers for cases without an exact example. Developers
+  change code for structural behavior, such as how weight changes the price.
+- A **question** identifies an input that neither examples nor code answered.
+  Answer it in the draft and rerun the request. The local API requires this
+  explicit rerun; the browser playground reruns its last request automatically.
+- A **check** compares implemented rules with their examples. Passing checks
+  does not mean every possible input was tested or anything went live.
+- A **draft version** is an operation counter. Accepted runs and checks advance
+  it too. A **source revision** describes the source content; it can remain
+  unchanged while the operation counter advances. GET requests do neither.
 
-## Workflow Example: Adding a New Country
+An invalid operation changes neither source, history, nor the version counter.
+A valid run that has no answer is still an accepted operation: its queued
+question and history are retained. A check that finds a disagreement is an
+accepted check result; inspect `result.status`, not just the HTTP status.
 
-### 1. Check current state
-```bash
-$ park version list
-Shipping.quote  6e0e1a540d50  ready  3 examples
-Zones.zone      d62382e09893  example-only  4 examples
+## Make API requests yourself
+
+`curl` examples below are an alternative to the script. Choose a fresh ID if
+you already used `shipping-demo`. All POSTs require JSON content type.
+
+```sh
+curl -sS http://127.0.0.1:8081/api/v1/drafts \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"shipping-demo","name":"Add Germany shipping","author":"ops"}'
+
+curl -sS http://127.0.0.1:8081/api/v1/drafts/shipping-demo/operations \
+  -H 'Content-Type: application/json' \
+  -d '{"author":"ops","expected_version":0,"operation":{"kind":"run","call":"Shipping.quote(\"DE\", 800)"}}'
+
+curl -sS http://127.0.0.1:8081/api/v1/drafts/shipping-demo/operations \
+  -H 'Content-Type: application/json' \
+  -d '{"author":"ops","expected_version":1,"operation":{"kind":"add-example","example":"Zones.zone(\"DE\") == \"international\""}}'
 ```
 
-### 2. Business user adds zone (draft)
-```bash
-$ park example add 'Zones.zone("DE") == "international"'
-Added example in zones.star
+Responses contain `draft.version`, `draft.snapshot`, and, for operations,
+`result`. In the last response, version is 2 and the question list is empty.
+Rerun the quote with `expected_version: 2`, then check with the returned
+version. The result's `output` is a Starlark literal string, e.g. `"2799"` in
+JSON, rather than a JSON numeric schema.
+
+| Operation kind | Additional fields | Purpose |
+|---|---|---|
+| `run` | `call` | Evaluate an input and retain any questions |
+| `test` | Optional `only: "Shipping.quote"` | Check all rules or one function |
+| `add-example` | `example` | Add an authoritative input/output answer |
+| `remove-example` | `call` | Remove that exact example |
+| `files` | `files` map, optional `delete` array and `message` | Atomically validate and apply source edits/deletions |
+| `load` | None | Refresh and record a draft operation |
+
+File edits take flat `.star` filenames. You cannot edit and delete the same
+file in one operation. Invalid source or deleting a required module rejects
+the whole operation, preserving the previous working draft.
+
+## Review, experiment, and export
+
+```sh
+curl -sS 'http://127.0.0.1:8081/api/v1/drafts/shipping-demo?history=true'
+curl -sS http://127.0.0.1:8081/api/v1/drafts/shipping-demo/diff
+
+curl -sS http://127.0.0.1:8081/api/v1/drafts/shipping-demo/fork \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"shipping-experiment","name":"Try another rule","author":"developer"}'
+
+curl -sS http://127.0.0.1:8081/api/v1/drafts/shipping-demo/export \
+  -o "$draft_output_dir/manual-export.zip"
 ```
 
-### 3. Verify hash changes
-```bash
-$ park version list
-Shipping.quote  28f0174b21ff  ready  3 examples    # CHANGED
-Zones.zone      fe5d6e2c7610  example-only  5 examples  # CHANGED
+Forking copies the current draft but starts a new operation counter and history;
+its original reference revision is retained. Subsequent edits do not cross
+between the parent and fork.
+
+Diffs list source files and affected functions in sorted order, with full
+hashes. Replacing an answer counts as one removed and one added example.
+A caller can have a different hash without a changed body because its callee
+changed. Hashes are inspection aids today; review source and check outcomes.
+The identity hardening needed for production is described in the
+[product plan](plan-saas.md#version-identity-hardening-before-release-storage-or-shared-caches).
+
+There is no **Promote** or **Approve** endpoint yet. Export and review are the
+end of today's workflow. A future reviewer will approve a pinned revision and
+its matching check report; a later edit will require renewed review.
+
+## Recover from common problems
+
+| Signal | What happened | What to do |
+|---|---|---|
+| HTTP 409 on an operation | Another accepted operation advanced the draft | GET the latest draft, review the differences, then submit an intentional edit with its current version |
+| HTTP 409 on create/fork | The ID exists, or the local 16-draft limit was reached | Choose a fresh ID; export drafts before restarting to clear the prototype |
+| HTTP 428 | No expected version was supplied | Fetch the draft and include `expected_version` |
+| HTTP 422 | Source, literal, call, or evaluation is invalid | Read `result.message`; the previous draft is unchanged |
+| HTTP 200 with `result.status: "unresolved"` | A valid run reached a missing answer | Inspect `draft.snapshot.questions`, save an example, then rerun |
+| HTTP 200 with `result.status: "failed"` | A rule disagrees with its examples | Inspect `result.lines`; correct the code or answer, then check again |
+| HTTP 404 | The ID does not exist in this process | Check the ID and whether the service restarted |
+| HTTP 415 / 413 | Wrong content type / request larger than 4 MiB | Send JSON or split source edits into smaller validated requests |
+| Export path already exists | The walkthrough avoids overwriting an existing file | Choose another export path; the server draft remains available |
+
+Never blindly retry a conflicting source edit with a new version number. Keep
+your intended change, compare it with the latest source, and decide what to
+apply. The local author field does not grant permissions or prove identity.
+
+## Developer verification and current boundaries
+
+```sh
+go test ./...
+go test -race ./internal/workspace ./internal/server
+node --test web/presentation.test.js
+sh web/build.sh
 ```
 
-### 4. Test the change
-```bash
-$ park test
-All 7 examples passed
-```
+The guide replay, stale-write races, snapshot isolation, question retention,
+failed validation, diff replacements/deletions, and fork/export behavior are
+automated. The HTTP command permits only loopback IPs; it is not a public
+hosted service. Persistent storage, tenant access control, production release
+manifests, billing, and service-level guarantees remain future milestones.
 
-### 5. Run a query to verify
-```bash
-$ park run 'Shipping.quote("DE", 800)'
-2799
-```
+For inspecting a filesystem project today, use `park version list` and
+`park run --why`. `park version diff` is currently a placeholder. `--why`
+shows actual call provenance; it does not currently print function hashes.
 
-### 6. (Future) Promote to production
-```bash
-# park promote --functions Zones.zone,Shipping.quote
-# Creates promotion request for approval
-```
-
-## Integration with `--why`
-
-The `--why` flag now shows function hashes in the provenance tree:
-
-```bash
-$ park run --why 'Shipping.quote("DE", 800)'
-2799
-  Shipping.quote(country="DE", grams=800) = 2799  code     shipping.star:11  hash=28f0174b21ff
-    Zones.zone(country="DE") = "international"    example  zones.star:9      hash=fe5d6e2c7610
-```
-
-## Future SaaS Commands (Planned)
-
-| Command | Purpose |
-|---------|---------|
-| `park promote --functions <list>` | Create promotion request for changed functions |
-| `park promote --auto` | Auto-detect changed functions + transitive callers |
-| `park promotions list` | List pending/approved promotion requests |
-| `park promote approve <id>` | Approve and atomically promote to production |
-| `park promote rollback <function> <hash>` | Instant rollback to prior promoted hash |
-| `park eval 'P.fn(args)'` | Production evaluation endpoint (low latency, cached) |
-
-## Architecture Notes for Operators
-
-- **Function Store** — Content-addressed (SHA256), append-only, shared across draft/prod
-- **Cache Layer** — Keyed by `(function_hash, canonical_input)`, invalidated per-function
-- **Promotion** — Atomic swap of function hashes in production workspace
-- **Rollback** — Instant pointer flip to prior hash (pure functions = safe)
-- **Multi-tenant** — Each tenant has isolated function store + cache
-
-## Troubleshooting
-
-### Hash didn't change after edit
-- Check if edit is whitespace-only (normalized away)
-- Verify you edited the function's own module, not a dependency
-
-### Cache not working
-- Function must be `ready` (≥2 examples + implemented)
-- Check `park version list` status column
-- Run `park test` to ensure examples pass
-
-### Cycle detection error
-- Recursive functions are supported (e.g., `countdown(n-1)`)
-- True cycles (A→B→A) are still rejected
-
-## Related Documentation
-
-- [SaaS Product Plan](plan-saas.md) — Full architecture and phases
-- [Design Decisions](design.md) — D406-409 per-function versioning
-- [Reference](reference.md) — File formats, commands, rules
+See the [SaaS plan](plan-saas.md), [CLI reference](reference.md), and
+[playground guide](plan-web-playground.md).

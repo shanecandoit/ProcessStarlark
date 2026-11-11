@@ -169,8 +169,10 @@ with it, but nothing should close it off. Constraints that keep the door open:
 
 ## Product path
 
-What a business team would need before using Park day to day, roughly in
-order. None of it is built; the engine is.
+The [SaaS plan](plan-saas.md) tracks implemented local draft foundations and
+the remaining hosted-product milestones. The [usage guide](saas-usage.md)
+replays the working shipping flow. What a business team still needs before
+using a hosted Park day to day:
 
 1. **Hosted playground** with word-number addition first, as the thing to
    send people. The addition tour introduces examples and rules; shipping

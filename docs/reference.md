@@ -335,6 +335,14 @@ and the catalog follow the rules on this page. The differences:
 
 See [plan-web-playground.md](plan-web-playground.md) for how it's built.
 
+## Local draft service
+
+`go run ./cmd/park-drafts --root examples/shipping` starts a separate local,
+in-memory draft API. It supports isolated edits, questions, checks, history,
+conflict rejection, diffs, forking, and project exports. See the
+[tested draft guide](saas-usage.md). It does not add production commands to
+`park`, and it is not connected to the static playground yet.
+
 ## Roadmap
 
 - **v2 call samples:** keep each function's first few and most recent few
