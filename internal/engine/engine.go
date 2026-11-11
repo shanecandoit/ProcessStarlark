@@ -44,11 +44,11 @@ func FormatCall(qualified string, names []string, input map[string]any) string {
 	return project.FormatCall(qualified, names, input)
 }
 
-// Cache stores results computed by confirmed code, keyed by function, project
-// revision, and canonical input. Implementations must be safe to discard.
+// Cache stores results computed by confirmed code, keyed by function, function
+// hash (content-addressed), and canonical input. Implementations must be safe to discard.
 type Cache interface {
-	Get(function, revision string, input any) (any, bool, error)
-	Put(function, revision string, input, output any) error
+	Get(function, functionHash string, input any) (any, bool, error)
+	Put(function, functionHash string, input, output any) error
 }
 
 // DirCache is the CLI's disk cache: one JSON record per result in .cache/.
@@ -56,25 +56,26 @@ type DirCache struct{ Root string }
 
 func (c DirCache) dir() (string, error) { return project.SafePath(c.Root, ".cache") }
 
-func (c DirCache) Get(function, revision string, input any) (any, bool, error) {
+func (c DirCache) Get(function, functionHash string, input any) (any, bool, error) {
 	dir, err := c.dir()
 	if err != nil {
 		return nil, false, err
 	}
-	return samples.ReadCache(dir, function, revision, input)
+	return samples.ReadCache(dir, function, functionHash, input)
 }
 
-func (c DirCache) Put(function, revision string, input, output any) error {
+func (c DirCache) Put(function, functionHash string, input, output any) error {
 	dir, err := c.dir()
 	if err != nil {
 		return err
 	}
-	return samples.WriteCache(dir, function, revision, input, output)
+	return samples.WriteCache(dir, function, functionHash, input, output)
 }
 
 type Engine struct {
-	Project *project.Project
-	Cache   Cache // Nil disables caching.
+	Project        *project.Project
+	Cache          Cache             // Nil disables caching.
+	FunctionHashes map[string]string // qualified name -> content hash
 	// Resolvers answer, in order, calls with no example and no code. Their
 	// answers are proposals. Empty means such calls are unresolved.
 	Resolvers  []Resolver
@@ -95,10 +96,18 @@ type Engine struct {
 }
 
 func New(p *project.Project) (*Engine, error) {
-	e := &Engine{Project: p, bodies: map[string]*starlark.Function{}, deps: map[string]Deps{}, loaded: map[string]bool{}, active: map[string]bool{}}
+	e := &Engine{Project: p, bodies: map[string]*starlark.Function{}, deps: map[string]Deps{}, loaded: map[string]bool{}, active: map[string]bool{}, FunctionHashes: map[string]string{}}
 	// Projects loaded from disk cache on disk; in-memory ones (root "") don't.
 	if p.Root != "" {
 		e.Cache = DirCache{Root: p.Root}
+	}
+	// Compute function hashes for content-addressed caching
+	versions, err := ComputeAllFunctionHashes(p)
+	if err != nil {
+		return nil, err
+	}
+	for qualified, v := range versions {
+		e.FunctionHashes[qualified] = v.Hash
 	}
 	for _, name := range project.Names(p.Processes) {
 		if err := e.load(name); err != nil {
@@ -459,8 +468,9 @@ func (e *Engine) resolve(thread *starlark.Thread, qualified string, raw any, ste
 			return out, nil
 		}
 	}
-	if !e.Testing && !e.Why && e.Cache != nil {
-		if out, ok, err := e.Cache.Get(qualified, e.Project.Revision, input); err != nil {
+	if !e.Testing && !e.Why && e.Cache != nil && f.Ready() {
+		fnHash := e.FunctionHashes[qualified]
+		if out, ok, err := e.Cache.Get(qualified, fnHash, input); err != nil {
 			return nil, err
 		} else if ok {
 			return out, nil
@@ -522,8 +532,9 @@ func (e *Engine) resolve(thread *starlark.Thread, qualified string, raw any, ste
 		e.proposals = append(e.proposals, Proposal{Function: qualified, Input: input, Output: output})
 	}
 	// Cache only results that rest entirely on confirmed code.
-	if !e.Testing && e.Cache != nil && len(e.proposals) == 0 {
-		if err := e.Cache.Put(qualified, e.Project.Revision, input, output); err != nil {
+	if !e.Testing && e.Cache != nil && len(e.proposals) == 0 && f.Ready() {
+		fnHash := e.FunctionHashes[qualified]
+		if err := e.Cache.Put(qualified, fnHash, input, output); err != nil {
 			return nil, err
 		}
 	}

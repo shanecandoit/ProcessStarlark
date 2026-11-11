@@ -149,6 +149,7 @@ go build -o park ./cmd/park
 ./park run 'WordAdd.eval("twenty-two plus twelve")'   # asks what twelve means
 ./park example add 'WordValues.value("twelve") == 12'
 ./park run 'WordAdd.eval("twenty-two plus twelve")'   # 34
+./park version list                                   # show function hashes & readiness
 ```
 
 Then open `park.html` in this folder to see every function and its examples.
@@ -178,6 +179,8 @@ still take precedence over the first-visit default.
 - [Sample projects](docs/ideas-sample-projs.md): word-number addition, a game,
   a business tool, and geometry, each runnable from [`examples/`](examples).
 - [Implementation plan](plan.md): the full contract.
+- [SaaS product plan](docs/plan-saas.md): draft→prod promotion with per-function versioning.
+- [SaaS usage guide](docs/saas-usage.md): CLI commands for draft→production workflow.
 - [Browser playground](docs/plan-web-playground.md): how the playground is
   built, and what's next for it. [Guided tours](docs/plan-guided-tours.md) are
   available for addition and shipping.

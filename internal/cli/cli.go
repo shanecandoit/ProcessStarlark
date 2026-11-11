@@ -29,6 +29,8 @@ Usage: park [--root PATH] COMMAND [FLAGS] [OPERANDS]
   import [--add] P.fn FILE          Propose a CSV/TSV table's rows (or add them as examples)
   test [P.fn]                       Check examples against implementations
   build                             Validate and regenerate park.html
+  version list                      List function content hashes and readiness
+  version diff                      Show semantic diff between two project states
 
 Calls use Starlark literals: 'Math.add(9, right=6)', 'WordAdd.eval("twenty-two plus eleven")'.
 Use park COMMAND --help for flags. Flags precede positional operands.
@@ -112,7 +114,7 @@ func (c *CLI) execute(ctx context.Context, args []string) error {
 		return c.init(args, *rootFlag)
 	}
 	switch command {
-	case "list", "run", "test", "build", "example", "import":
+	case "list", "run", "test", "build", "example", "import", "version":
 	default:
 		return fail(2, "unknown command %q", command)
 	}
@@ -137,6 +139,8 @@ func (c *CLI) execute(ctx context.Context, args []string) error {
 				return nil
 			}
 			return c.example(nil, args)
+		case "version":
+			return c.version(nil, args)
 		}
 	}
 	var root string
@@ -181,6 +185,8 @@ func (c *CLI) execute(ctx context.Context, args []string) error {
 		return c.test(ctx, p, args)
 	case "import":
 		return c.importRows(ctx, p, args)
+	case "version":
+		return c.version(p, args)
 	}
 	return nil
 }
@@ -475,5 +481,59 @@ func (c *CLI) test(ctx context.Context, p *project.Project, args []string) error
 	if report.Failures > 0 {
 		return fail(1, "tests failed")
 	}
+	return nil
+}
+
+func (c *CLI) version(p *project.Project, args []string) error {
+	if len(args) == 0 {
+		return fail(2, "version requires list or diff subcommand")
+	}
+	subcommand := args[0]
+	args = args[1:]
+	switch subcommand {
+	case "list":
+		return c.versionList(p, args)
+	case "diff":
+		return c.versionDiff(p, args)
+	default:
+		return fail(2, "unknown version subcommand %q", subcommand)
+	}
+}
+
+func (c *CLI) versionList(p *project.Project, args []string) error {
+	fs := c.flags("version list")
+	if err := parse(fs, args); err != nil {
+		return err
+	}
+	if err := exact(fs, 0); err != nil {
+		return err
+	}
+	e, err := engine.New(p)
+	if err != nil {
+		return err
+	}
+	for _, qualified := range engine.SortedFunctionNames(e.FunctionHashes) {
+		hash := e.FunctionHashes[qualified]
+		_, fn, _ := p.Function(qualified)
+		status := "ready"
+		if !fn.Implemented {
+			status = "example-only"
+		} else if !fn.Ready() {
+			status = "needs-examples"
+		}
+		fmt.Fprintf(c.Out, "%s  %s  %s  %d examples\n", qualified, hash[:12], status, len(fn.Examples))
+	}
+	return nil
+}
+
+func (c *CLI) versionDiff(p *project.Project, args []string) error {
+	fs := c.flags("version diff")
+	if err := parse(fs, args); err != nil {
+		return err
+	}
+	if err := exact(fs, 0); err != nil {
+		return err
+	}
+	fmt.Fprintln(c.Out, "version diff: not yet implemented")
 	return nil
 }
