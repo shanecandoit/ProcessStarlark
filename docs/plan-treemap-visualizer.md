@@ -9,6 +9,121 @@ Related: [browser playground](plan-web-playground.md),
 [word-number addition](ideas-sample-projs.md#number-words-addition), and
 [provenance semantics](design.md#d20-park-run---why-shows-where-an-answer-came-from).
 
+## Recommendation after product, design, and engineering review
+
+The natural-language addition parser already exists in
+`examples/word-addition/` and is the default sample and first-visit tour.
+The next step is a small onboarding prototype, not another parser or a full
+treemap implementation. The following are review perspectives and proposals,
+not findings from user research or independent reviewers.
+
+The first question is **can someone supply a missing answer and understand
+where it applies?** Understanding a call hierarchy is secondary. A visually
+attractive tree does not by itself teach the difference between an example
+and a rule.
+
+### Product perspective: define the learning outcome
+
+Target someone who knows the answer to an everyday question but does not
+write code. After the first session, they should understand that:
+
+- a saved example answers one exact call;
+- a rule can combine saved answers to handle new calls;
+- adding one word meaning can help several expressions without teaching a
+  new rule;
+- Park asks only when execution reaches a call that nothing can answer.
+
+Use a small task to demonstrate this: calculate `twenty-two plus eleven`,
+change eleven to twelve, supply the missing meaning, then try
+`twelve plus two`. The final reuse matters: obtaining 34 alone could leave
+someone thinking they saved the answer for the whole addition.
+
+Number words introduce the mechanism. Shipping should then demonstrate the
+practical handoff between a person maintaining a table and a developer
+maintaining a rule. Avoid positioning Park as a general natural-language
+calculator or suggesting that examples automatically generate code.
+
+### Senior design perspective: show an answer before a call tree
+
+The current playground gives half its desktop width to source, asks for a
+"Call" such as `WordAdd.eval(...)`, and links trace rows directly to source
+locations. Those are useful developer tools but require programming concepts
+before a new visitor can try the idea. The current mobile layout also places
+the source pane before the run area.
+
+Prototype this hierarchy for the introductory experience:
+
+1. **Try an expression:** a plain text input containing
+   `twenty-two plus eleven`, with the sample's selected function handling it.
+   This is a friendlier input to that function, not arbitrary language routing.
+2. **Answer:** show 33 prominently, or a specific question when blocked.
+3. **How this answer was made:** show the useful smaller inputs and results,
+   with saved answers and rules distinguished by words and symbols.
+4. **Inspect a piece:** reveal its example row or rule description. Function
+   names, source, and the complete execution tree are available on demand.
+
+Keep the input, result, and next required action together. In the missing-word
+state, the question "What number does twelve mean?" should be visible without
+finding a small rectangle or scrolling through every function table.
+
+The primary action can remain **Save example**, with scope stated beside it:
+"Save a meaning for twelve. Other expressions can use it too." A later action
+that saves a whole-expression result must describe that different scope.
+Avoid "Teach Park the rule," which implies inference that does not occur.
+
+Start with two candidates: a plain-language expandable outline and nested
+frames. Both should use the same labels, details, and question editor. This
+isolates whether nesting helps; comparing a polished graphic with an unchanged
+developer log would mix several design changes into one comparison. Keep an
+area-weighted treemap as a later candidate only if it offers a clear benefit.
+
+### Senior engineering perspective: build a truthful presentation layer
+
+Keep the Go engine and its `why` result as the source of execution facts.
+Separate those facts from display names, collapsed state, selection, and
+layout. The outline and nested-frame renderers should consume the same
+presentation model and trigger the existing example and question operations.
+
+Friendly operation names should come from reviewed sample metadata, existing
+function descriptions, or a readable function-name fallback. Do not generate
+claims about a rule from its source at runtime. In particular, a trace with
+children returning 22 and 11 does not, by itself, establish that its parent
+added them; other functions can use those values differently.
+
+Folding a pass-through call can reduce noise, but must preserve its meaning.
+`NumberWords.parse("eleven")` is a code call that uses a saved vocabulary
+answer. If the overview folds that wrapper, label it "Uses saved meaning"
+and allow expansion to the original calls. Do not relabel the code node's
+direct origin as an example. An exact whole-expression example remains a
+single executed node, even if a tutorial can describe a possible calculation.
+
+Associate every displayed run with its project revision. If someone edits
+the project, mark the old explanation as belonging to the previous version
+until rerun; do not silently point its source locations into changed files.
+Question submission must use the selected call's structured identity or its
+engine-produced call representation, never reconstruct a call from a shortened
+visual label. Reuse existing literal parsing and validation.
+
+For the first prototype, keep code visible through an explicit developer
+details action rather than removing it from the product. Do not couple this
+experiment to a general application rewrite, graph layout engine, resolver UI,
+performance profiler, or incremental evaluator.
+
+## First-session storyboard
+
+| Moment | What the person sees or does | What it must communicate |
+|---|---|---|
+| Try | Enter `twenty-two plus eleven`; get 33 | This is a working computation, with a concrete input and answer |
+| Inspect | Select eleven's saved meaning and twenty-two's combination rule | People supply answers; code composes them |
+| Encounter a gap | Enter `twenty-two plus twelve`; see "What number does twelve mean?" | One specific call is missing, not the whole program |
+| Answer | Save 12 beside that question; the expression reruns and returns 34 | The saved example is a word meaning and its scope is explicit |
+| Reuse | Enter `twelve plus two`; get 14 | The existing code uses the same new row in another expression |
+| Check understanding | Ask what happens for an unsaved word, or an exact saved expression | Missing answers become questions; exact examples take precedence |
+
+The final row is a usability-study prompt, not a required quiz in the product.
+Disclosure should be reversible: someone can inspect developer details and
+return to the same input, selected piece, and result.
+
 ## What the view should help someone understand
 
 A person who does not write code should be able to answer:
@@ -175,46 +290,67 @@ the call's canonical inputs and its occurrence within its parent.
 
 ## Proposed sequence and review gates
 
-### 1. Collect a small trace corpus
+### 1. Capture the minimum real traces
 
-Capture real `workspace.Run` results for:
+Start with real `workspace.Run` results for:
 
 - default word addition, showing examples composed by code;
 - the missing twelve lookup, before and after answering it;
-- a whole-expression example, giving a single-node trace;
-- invalid `eleven-two`, showing an error and its blocked ancestor;
-- a result from unconfirmed code and a resolver proposal;
-- shipping, a deeper chain, repeated sibling calls, and large object values.
+- reuse in `twelve plus two`;
+- a whole-expression example, giving a single-node trace.
 
 Keep these as sample data shared by candidate renderers. They must come from
-the engine, not a hand-authored idealized computation. Proposal metadata such
-as resolver identity is not fully exposed in the current workspace Step;
-decide whether the first version needs a bridge extension.
+the engine, not a hand-authored idealized computation. Then check one shipping
+trace to catch assumptions specific to numbers. This is enough to begin the
+onboarding comparison; do not block the first prototype on every engine state.
 
-### 2. Review two or three alternatives
+Before production, broaden the corpus to invalid `eleven-two`, unconfirmed
+code, a resolver proposal, deeper chains, repeated calls, and large object
+values. Proposal metadata such as resolver identity is not fully exposed in
+the current workspace Step; support can be scoped separately from the first
+onboarding experiment.
 
-Use the same corpus and interaction tasks for every candidate. Include the
-current text tree as a baseline. Review a desktop and phone state, a missing
-answer, an error, and the single-example case. Choose the layout, size meaning,
-selection behavior, and labels before implementing the production renderer.
+### 2. Compare an outline with nested frames in the same flow
 
-Ask someone unfamiliar with Park to find why eleven became 11, identify what
-made twenty-two become 22, and answer the missing twelve question. Check that
-they do not confuse rectangle size with numeric value or origin with test
-success. If the nested view makes these tasks harder than the text tree,
-revise or stop.
+Use the first-session storyboard, labels, trace corpus, and question editor
+for both candidates. Include the current developer text tree as a baseline,
+but do not attribute gains from plain-language copy to the rectangle layout.
+Review desktop and phone versions, the missing-answer state, and the
+single-example case. Choose the layout, size meaning, selection behavior,
+and labels before implementing the production renderer.
 
-### 3. Build the chosen read-only view
+Run a small formative study with five people unfamiliar with Park. This is a
+directional test, not statistical validation. Proposed acceptance targets are:
 
-Render the existing `why` data beside the current result, with selection and
-source navigation. Keep the text view available. Avoid engine changes unless
-a reviewed interaction requires fields the bridge cannot supply.
+- at least four can supply twelve's meaning and run a second expression using
+  it without opening source or receiving moderator instructions;
+- at least four can explain which saved answer changed and what code reused;
+- at least four can distinguish an exact saved expression from a computed
+  expression after inspecting both;
+- record and resolve any observed confusion about automatic rule learning,
+  code being verified, or rectangle area measuring the output value.
 
-### 4. Add example and question navigation
+Record task completion, wrong edits, help requests, and participants' own
+explanations. A two-minute path to supplying and reusing the missing answer
+is a design target to measure, not a demonstrated result. If a proposed view
+requires explaining trees before someone can answer the question, revise it.
+If nested frames do not improve comprehension or navigation over the outline,
+ship the simpler outline.
 
-Connect selection to the existing tables and question operations. After an
-answer, replay the original call and update the trace. Add only the check
-status integration that the chosen design actually needs.
+### 3. Build one complete interaction with the chosen view
+
+Implement expression entry, result, explanation selection, saving the missing
+word meaning, and replay. Keep the developer trace available. Use the existing
+engine and mutation operations; extend bridge fields only when the chosen
+interaction requires them. A read-only chart alone does not test onboarding.
+
+### 4. Generalize and cover the remaining states
+
+Connect saved-answer selection to exact rows in existing tables, validate
+the flow against shipping, and add the error and proposal cases from the
+broader corpus. Check status integration, comparison mode, and new layout
+options can follow separately. Do not make them prerequisites for a usable
+answer-and-reuse flow.
 
 ### 5. Verify semantics and usability
 
