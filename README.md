@@ -176,23 +176,27 @@ project, retain questions and history, check rules, review a diff, and export
 it. Start it from the repository root:
 
 ```sh
-go run ./cmd/park-drafts --root examples/shipping
+go run ./cmd/park-drafts --root examples/shipping --db .park/shipping.sqlite
 ```
 
 In another terminal, run `python3 scripts/draft_walkthrough.py`. Follow the
-[draft guide](docs/saas-usage.md) to export a project before stopping: draft
-storage is in memory. Accounts, production promotion, and durable hosted
-storage are planned. To use the playground with explicit draft saves and
+[draft guide](docs/saas-usage.md) for the question queue, source formatting,
+restart recovery, and database backup. SQLite is CGo-free, persists drafts and
+activity, and tracks SQL migrations with checksums. Hosted accounts and
+production promotion are planned. To use the playground with explicit draft saves and
 SHA-256 source versions with parent links:
 
 ```sh
 sh web/build.sh
-go run ./cmd/park-drafts --root examples/word-addition --web-dir web/dist
+go run ./cmd/park-drafts --root examples/word-addition --db .park/words.sqlite --web-dir web/dist
 ```
 
 Open `http://127.0.0.1:8081` and expand **Drafts and source versions**. Save,
 inspect an earlier version, or edit it in a new draft. See the
-[source version plan](docs/plan-source-versions.md).
+[source version plan](docs/plan-source-versions.md) and
+[durable draft plan](docs/plan-durable-drafts.md). **Show code** offers safe
+formatting and basic lint. Saved-source questions can be answered or dismissed
+in the optional draft panel, with dates and local user attribution.
 
 ## Learn more
 

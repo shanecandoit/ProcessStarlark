@@ -1,15 +1,18 @@
 # Plan: immutable source versions and playground drafts
 
-Status, 2026-11-11: slices 1 and 2 implemented locally. Durable storage,
-authenticated collaboration, and reviewed releases remain planned.
+Status, 2026-11-11: source versions, playground drafts, and SQLite durability
+implemented locally. Authenticated collaboration and reviewed releases remain
+planned. See [durable drafts and source hygiene](plan-durable-drafts.md).
 
 ## Model
 
 Use SHA-256, not an incrementing integer, as source version identity. The
 existing project revision already hashes sorted filenames and exact source
 bytes with length framing and a codec version. Keep that as `source_revision`.
-Comments, spacing, examples, private helpers, and constants all count. This is
-deliberately an exact source identity, not a claim of semantic equivalence.
+The hash identifies saved source after conservative formatting: blank runs and
+trailing whitespace outside literals are normalized before saving. Comments,
+other spacing, examples, private helpers, and constants still count. This is
+an exact saved-source identity, not a claim of semantic equivalence.
 
 A source version stores its full `.star` file snapshot, `source_revision`, and
 one `parent` version ID (empty at the root). Its ID hashes a domain-separated,
@@ -46,10 +49,11 @@ hardening described in [the SaaS plan](plan-saas.md).
    survive network errors and conflicts. Opening a draft/version must not
    silently replace unsaved work. Display short IDs with full IDs available;
    users need not type hashes. Checks remain separate from saving or release.
-3. **Durability and collaboration.** Persist immutable objects and atomically
-   update draft heads/state tokens. Verify restart/restore, transactions across
-   processes, quotas, authenticated tenant scope, and membership. This comes
-   before public exposure. Local memory and browser recovery are not backups.
+3. **Durability and collaboration.** SQLite now persists immutable objects and
+   updates draft state/questions/activity atomically. Tracked migrations,
+   independent writer conflicts, restart, and backup/restore are tested.
+   Authentication, tenant scope, membership, and hosted quotas remain required
+   before public exposure. Browser recovery is not a database backup.
 4. **Reviewed releases.** Pin whole-project version plus runtime/check report;
    approve and activate through guarded transactions. Test stale approvals and
    rollback. No save or fork in slices 1–2 activates production.
@@ -63,4 +67,4 @@ branch from it, and confirm both draft heads remain independent. Check stale
 saves with two clients and retain the losing client's local edits.
 
 Update the SaaS plan, usage guide, CLI reference, and README with implemented
-routes, the local web command, token recovery, and the in-memory boundary.
+routes, the local web command, token recovery, and the local persistence and authentication boundaries.

@@ -1,5 +1,5 @@
-// Package server exposes a local, single-project draft API. It is an in-memory
-// development service, not an authenticated or durable hosted SaaS deployment.
+// Package server exposes a local, single-project draft API with memory or
+// SQLite storage. Authentication and production releases are separate milestones.
 package server
 
 import (
@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/shanecandoit/ProcessStarlark/internal/workspace"
@@ -24,9 +23,8 @@ const maxDrafts = 16
 var draftID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
 
 type draftAPI struct {
-	base     workspace.Files
-	drafts   *workspace.DraftManager
-	createMu sync.Mutex
+	base  workspace.Files
+	store DraftStore
 }
 
 type response struct {
@@ -51,23 +49,40 @@ type operationRequest struct {
 // NewDraftHandler copies and validates a read-only reference project. Each draft
 // starts from that reference. None of these endpoints can change the reference.
 func NewDraftHandler(base workspace.Files) (http.Handler, error) {
-	loaded := workspace.Load(base)
+	loaded := workspace.Format(base)
 	if loaded.Status != workspace.OK {
 		return nil, fmt.Errorf("reference project: %s", loaded.Message)
 	}
-	api := &draftAPI{base: loaded.Files, drafts: workspace.NewDraftManager()}
+	return NewStoredDraftHandler(&memoryStore{base: loaded.Files, drafts: workspace.NewDraftManager()})
+}
+
+func NewStoredDraftHandler(store DraftStore) (http.Handler, error) {
+	loaded := workspace.Load(store.Reference())
+	if loaded.Status != workspace.OK {
+		return nil, fmt.Errorf("reference project: %s", loaded.Message)
+	}
+	api := &draftAPI{base: loaded.Files, store: store}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "storage": "memory"})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "storage": store.Kind()})
+	})
+	mux.HandleFunc("GET /api/v1/storage", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]string{"storage": store.Kind()})
 	})
 	mux.HandleFunc("GET /api/v1/base", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, workspace.Load(api.base)) })
 	mux.HandleFunc("POST /api/v1/drafts", api.create)
 	mux.HandleFunc("GET /api/v1/drafts", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"drafts": api.drafts.List()})
+		drafts, err := api.store.List(r.Context())
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"drafts": drafts})
 	})
 	mux.HandleFunc("GET /api/v1/drafts/{id}", api.get)
 	mux.HandleFunc("POST /api/v1/drafts/{id}/operations", api.operation)
 	mux.HandleFunc("GET /api/v1/drafts/{id}/diff", api.diff)
+	mux.HandleFunc("GET /api/v1/drafts/{id}/questions", api.questions)
 	mux.HandleFunc("GET /api/v1/drafts/{id}/export", api.export)
 	mux.HandleFunc("POST /api/v1/drafts/{id}/fork", api.fork)
 	mux.HandleFunc("GET /api/v1/drafts/{id}/versions", api.versions)
@@ -129,35 +144,19 @@ func (api *draftAPI) createDraft(w http.ResponseWriter, r *http.Request, req cre
 		writeError(w, http.StatusBadRequest, "from_revision is only supported when forking a draft")
 		return
 	}
-	api.createMu.Lock()
-	defer api.createMu.Unlock()
-	if _, exists := api.drafts.Get(req.ID); exists {
-		writeError(w, http.StatusConflict, "draft id already exists")
-		return
-	}
-	if len(api.drafts.List()) >= maxDrafts {
-		writeError(w, http.StatusConflict, "this local service supports at most 16 drafts; export your work before restarting")
-		return
-	}
-	var draft *workspace.DraftWorkspace
-	var err error
-	if from == "" {
-		draft, err = api.drafts.Create(req.ID, req.Name, req.Author, api.base)
-	} else {
-		draft, err = api.drafts.ForkAt(from, req.ID, req.Name, req.Author, req.FromRevision)
-	}
+	snap, err := api.store.Create(r.Context(), req.ID, req.Name, req.Author, from, req.FromRevision)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	w.Header().Set("Location", "/api/v1/drafts/"+req.ID)
-	writeJSON(w, http.StatusCreated, response{Draft: draft.GetSnapshot(true)})
+	writeJSON(w, http.StatusCreated, response{Draft: snap})
 }
 
 func (api *draftAPI) find(w http.ResponseWriter, r *http.Request) *workspace.DraftWorkspace {
-	draft, ok := api.drafts.Get(r.PathValue("id"))
-	if !ok {
-		writeError(w, http.StatusNotFound, "draft not found")
+	draft, err := api.store.Read(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeStoreError(w, err)
 		return nil
 	}
 	return draft
@@ -170,10 +169,6 @@ func (api *draftAPI) get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *draftAPI) operation(w http.ResponseWriter, r *http.Request) {
-	draft := api.find(w, r)
-	if draft == nil {
-		return
-	}
 	var req operationRequest
 	if !decode(w, r, &req) {
 		return
@@ -192,20 +187,13 @@ func (api *draftAPI) operation(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	var result workspace.Result
-	var snap workspace.DraftSnapshot
-	var err error
-	if req.ExpectedState != "" {
-		result, snap, err = draft.ApplyState(ctx, req.Author, req.ExpectedState, req.Operation)
-	} else {
-		result, snap, err = draft.Apply(ctx, req.Author, *req.ExpectedVersion, req.Operation)
-	}
+	result, snap, err := api.store.Apply(ctx, r.PathValue("id"), req.Author, req.ExpectedState, req.ExpectedVersion, req.Operation)
 	if err != nil {
 		if errors.Is(err, workspace.ErrDraftConflict) {
 			writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "draft": snap})
 			return
 		}
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	status := http.StatusOK
@@ -282,4 +270,28 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 }
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+func (api *draftAPI) questions(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	if status != "" && status != "open" && status != "all" {
+		writeError(w, 400, "status must be open or all")
+		return
+	}
+	if draft := api.find(w, r); draft != nil {
+		writeJSON(w, 200, map[string]any{"questions": draft.Questions(status == "all")})
+	}
+}
+
+func writeStoreError(w http.ResponseWriter, err error) {
+	status := http.StatusInternalServerError
+	switch {
+	case errors.Is(err, workspace.ErrDraftNotFound):
+		status = 404
+	case errors.Is(err, workspace.ErrDraftExists), errors.Is(err, workspace.ErrDraftLimit):
+		status = 409
+	case errors.Is(err, workspace.ErrDraftInput), errors.Is(err, workspace.ErrSourceVersionNotFound):
+		status = 400
+	}
+	writeError(w, status, err.Error())
 }

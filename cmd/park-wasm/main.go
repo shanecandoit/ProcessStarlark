@@ -68,6 +68,8 @@ func main() {
 	ctx := context.Background()
 	api := js.Global().Get("Object").New()
 	api.Set("load", bridge(func(f workspace.Files, _ []string) workspace.Result { return workspace.Load(f) }))
+	api.Set("format", bridge(func(f workspace.Files, _ []string) workspace.Result { return workspace.Format(f) }))
+	api.Set("lint", bridge(func(f workspace.Files, _ []string) workspace.Result { return workspace.Lint(f) }))
 	api.Set("run", bridge(func(f workspace.Files, a []string) workspace.Result { return workspace.Run(ctx, f, arg(a, 0)) }))
 	api.Set("test", bridge(func(f workspace.Files, a []string) workspace.Result { return workspace.Test(ctx, f, arg(a, 0)) }))
 	api.Set("addExample", bridge(func(f workspace.Files, a []string) workspace.Result { return workspace.AddExample(f, arg(a, 0)) }))

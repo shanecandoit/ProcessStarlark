@@ -1,7 +1,9 @@
 # Plan: Park as a SaaS product
 
-Status: local draft API prototype implemented, 2026-11-11. Hosted accounts,
-durable storage, approvals, production releases, and billing are planned.
+Status: local draft API with SQLite persistence, tracked migrations, source
+hygiene, and a durable question queue implemented, 2026-11-11. Hosted accounts,
+approvals, production releases, and billing are planned. See the
+[durable draft plan](plan-durable-drafts.md).
 The local service can serve the playground with explicit draft saves and
 immutable source history; the public static playground remains browser-only.
 See the [source version plan](plan-source-versions.md) for this implementation.
@@ -29,18 +31,22 @@ reusable answer, not merely a diagram or a version hash.
 | Pure evaluation, authoritative examples, questions, provenance | Implemented | Engine, CLI, playground, and their tests |
 | Approachable example tables and optional visual explanations | Implemented | Static playground; addition and shipping tours |
 | Function hashes and `park version list` | Implemented, experimental identity scheme | `internal/engine/version.go`; version tests |
-| Draft operations, snapshots, history, forking, source/function diff | Implemented in memory | `internal/workspace/draft.go` and regression tests |
+| Draft operations, snapshots, history, forking, source/function diff | Implemented; SQLite by default | `internal/workspace/draft.go` and regression tests |
 | Local HTTP draft service | Implemented | `go run ./cmd/park-drafts --root examples/shipping` |
-| Immutable source versions | Implemented in memory | SHA-256 IDs, complete source snapshots, parent links, historical forks |
+| Immutable source versions | Implemented; SQLite by default | SHA-256 IDs, complete source snapshots, parent links, historical forks |
 | Playground draft saves/history | Implemented locally | Optional panel via `--web-dir web/dist`; explicit save and branch |
 | Stale-write rejection | Implemented | SHA-256 working-state token checked under the draft lock; HTTP 409 |
 | Export a draft as an ordinary Park project | Implemented | ZIP export endpoint and walkthrough test |
-| Durable draft storage and authenticated collaboration | Planned | Required before a hosted pilot |
+| SQLite storage, migration ledger, backup/restore | Implemented | `internal/draftstore`, restart/concurrency/rollback tests |
+| Basic question queue and local actor IDs/dates | Implemented | List, answer, dismiss, reopen, retain closed items |
+| Safe source formatting and lint | Implemented | Literal-preserving formatter; source-save normalization |
+| Authenticated collaboration | Planned | Required before a hosted pilot |
 | Review, promote, production evaluation, rollback | Planned | No production pointer or promotion command exists |
 | `park version diff` | Placeholder | Use the implemented draft diff endpoint today |
 
 There is no hosted account service or PostgreSQL/Redis store in this repository.
-In-memory history is an activity log, not a durable or tamper-proof audit log.
+SQLite persists activity with actor IDs and UTC dates; it is not a tamper-proof
+audit log. Temporary memory mode remains available with `--db ""`.
 Author names in the local API are supplied labels, not authenticated identities.
 A shared playground link contains a copy of a project; it is not collaborative
 access to a server draft.
@@ -49,7 +55,7 @@ access to a server draft.
 
 **Implemented:**
 
-1. Start a service with a read-only reference project copied into memory.
+1. Start a service with a read-only reference project bound to a local database.
 2. Create an isolated draft from that reference, or fork an existing draft.
 3. Run an input. Unresolved calls become questions in that draft only.
 4. Add an example or edit source files, with whole-project validation.
@@ -57,7 +63,8 @@ access to a server draft.
 6. Review source changes and affected function hashes, including added and
    removed examples. Dependency-only changes remain distinguishable from a
    changed function body.
-7. Export code, examples, questions, and catalog before stopping the process.
+7. Export portable project files, or back up the database with source history,
+   questions, dates, users, and activity. Restart with the same reference/database.
 
 Source versions are immutable SHA-256 objects with full source and parent links.
 A draft points to its head. Only changed source creates a version; runs/checks
@@ -66,18 +73,26 @@ operations, including changes to questions and activity. The integer `version`
 is retained solely as a deprecated compatibility counter. Rejected operations
 leave source, head, token, and history unchanged. GETs do not change state.
 
-Mutations hold the draft lock from state-token comparison through evaluation and
-commit. This prevents an old run or example edit from overwriting a newer edit.
-Different drafts can operate independently. This initial serialization trades
-throughput for a simple, testable consistency model; it is not a claim about
+Memory operations hold a draft lock; SQLite operations reload persisted state
+and compare tokens inside a database write transaction. Source objects, head,
+working files/questions, users, and activity commit together. This prevents an
+old run or example edit from overwriting a newer edit across independent
+connections, not just within one Go process.
+Memory drafts have separate locks; SQLite writes serialize across the database.
+This initial model trades throughput for testable consistency; it is not a claim about
 real-time multi-user editing performance.
 
 The HTTP service accepts JSON requests up to 4 MiB and at most 16 drafts. The
 command binds only to loopback IPs. Requests from foreign browser origins are
 rejected; there are no CORS permissions. These development boundaries are not
-an authentication system. The service has no persistence. With `--web-dir`, the playground evaluates
-in WASM and explicitly saves source through the API; it does not upload browser
-questions or check reports.
+an authentication system. SQLite uses WAL on local disk, foreign keys, and
+transactional embedded migrations with recorded names, checksums, and dates.
+A different startup reference or unsupported/modified migration is rejected.
+
+With `--web-dir`, the playground evaluates normally in WASM and explicitly
+saves formatted source through the API. Its saved-source queue can run on the
+server, answer/dismiss questions, and inspect closed items and recent activity.
+Ordinary browser questions and check reports are not automatically uploaded.
 
 ## Milestone 2: durable, authenticated pilot
 
@@ -85,10 +100,11 @@ This comes before public exposure and production promotion, not after them.
 
 - Establish tenant, project, draft, and user membership. Author identity must
   come from the authenticated principal, not a submitted JSON label.
-- Persist complete validated draft snapshots, operation versions, base
-  revisions, questions, and history. Verify restart recovery and backup restore.
-- Use a database compare-and-swap or equivalent transaction for version
-  checks and writes across multiple server processes.
+- Implemented locally: persist validated draft state, immutable source ancestry,
+  question lifecycle, user IDs/dates, activity, and exact state tokens. Restart
+  recovery and consistent backup/restore have automated tests.
+- Implemented locally: SQLite compare-and-swap inside immediate transactions.
+  Independent connection tests cover stale writes; hosted scaling remains open.
 - Enforce tenant/project scope on every read, edit, diff, fork, export, and
   eventual release operation. Test guessed IDs and cross-tenant references.
 - Set request, source, history, draft count, execution, and concurrency limits.
@@ -205,13 +221,13 @@ concepts. "Ready" means enough examples under policy, not "checked" or "live."
 | Area | Current automated evidence | Remaining gate |
 |---|---|---|
 | Draft edits | Validation, rollback on rejection, true concurrent operations | Durable transactions across processes |
-| Snapshots | Files/history cannot mutate draft state; questions persist | Persistent history and retention |
+| Snapshots | Copy isolation; SQLite restart recovery and backup restore | Retention and hosted operations |
 | Diff | Sorted output, full hashes, replacements and deleted functions | Hardened identity/dependencies and source diff UI |
-| API | Documented workflow, conflicts, malformed/oversized requests, fork isolation | Authenticated tenant scope and persistence |
+| API | Documented workflow replayed on memory/SQLite with restart per request | Authenticated tenant scope |
 | User guide | Same JSON steps drive Python walkthrough and Go handler tests | Hosted UI walkthrough and user comprehension study |
 | Release | Not implemented | Pinned checks, roles, atomic activation, stale approvals, rollback |
 
-Run `go test ./...`, `go test -race ./internal/workspace ./internal/server`,
+Run `go test ./...`, `go test -race ./internal/draftstore ./internal/workspace ./internal/server`,
 `node --test web/*.test.js`, and `sh web/build.sh` before merging.
 Replay the guide against a real local service as well as the in-process tests.
 Do not claim hosted readiness, compliance, performance, or completed phases
@@ -221,7 +237,8 @@ based only on the presence of a struct or a green example walkthrough.
 
 1. Harden per-function cache identity and add the regression cases above.
    Immutable whole-project source versions and local playground history are built.
-2. Choose a durable store and implement authenticated, scoped draft transactions.
+2. SQLite persistence/migrations are built. Add authenticated, scoped workspaces
+   and membership before hosting.
 3. Extend the local playground connection to authenticated durable workspaces
    and pinned server check reports.
 4. Build pinned review requests and immutable whole-project releases.

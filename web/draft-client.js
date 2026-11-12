@@ -3,8 +3,16 @@
   "use strict";
   const source = files => Object.fromEntries(Object.entries(files).filter(([name]) => name.endsWith(".star")));
   const key = files => JSON.stringify(Object.entries(source(files)).sort(([a], [b]) => a.localeCompare(b)));
+  function acceptSavedSource(submitted, current, remote) {
+    const next = { ...current };
+    for (const [name, text] of Object.entries(source(submitted))) {
+      if (current[name] !== text) continue;
+      if (name in remote) next[name] = remote[name]; else delete next[name];
+    }
+    return next;
+  }
   class Client {
-    constructor(fetcher = root.fetch.bind(root)) { this.fetch = fetcher; this.draft = null; }
+    constructor(fetcher = root.fetch.bind(root), author = "playground") { this.fetch = fetcher; this.author = author; this.draft = null; }
     async request(path, body) {
       const response = await this.fetch("/api/v1/" + path, body === undefined ? {} : {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -18,13 +26,13 @@
       return value;
     }
     async open(id) {
-      const value = await this.request(`drafts/${encodeURIComponent(id)}`);
+      const value = await this.request(`drafts/${encodeURIComponent(id)}?history=true`);
       this.draft = value.draft;
       return this.draft;
     }
     async create(id, name, files) {
-      const value = await this.request("drafts", { id, name, author: "playground" });
-      const candidate = new Client(this.fetch);
+      const value = await this.request("drafts", { id, name, author: this.author });
+      const candidate = new Client(this.fetch, this.author);
       candidate.draft = value.draft;
       await candidate.save(files);
       this.draft = candidate.draft;
@@ -35,7 +43,7 @@
       const target = source(files);
       if (key(target) === key(this.draft.files)) return this.draft;
       const value = await this.request(`drafts/${encodeURIComponent(this.draft.id)}/operations`, {
-        author: "playground", expected_state: this.draft.state_token,
+        author: this.author, expected_state: this.draft.state_token,
         operation: { kind: "files", files: target, delete: Object.keys(source(this.draft.files)).filter(name => !(name in target)) },
       });
       this.draft = value.draft;
@@ -45,17 +53,29 @@
       if (!this.draft) return [];
       return (await this.request(`drafts/${encodeURIComponent(this.draft.id)}/versions`)).versions;
     }
+    async operation(operation) {
+      if (!this.draft) throw new Error("Create or open a draft first.");
+      const value = await this.request(`drafts/${encodeURIComponent(this.draft.id)}/operations`, {
+        author: this.author, expected_state: this.draft.state_token, operation,
+      });
+      this.draft = value.draft;
+      return value.result;
+    }
+    async questions(all = false) {
+      if (!this.draft) return [];
+      return (await this.request(`drafts/${encodeURIComponent(this.draft.id)}/questions${all ? "?status=all" : ""}`)).questions;
+    }
     async fork(revision, id, name) {
       if (!this.draft) throw new Error("Open a draft first.");
       const value = await this.request(`drafts/${encodeURIComponent(this.draft.id)}/fork`, {
-        id, name, author: "playground", from_revision: revision,
+        id, name, author: this.author, from_revision: revision,
       });
       this.draft = value.draft;
       return this.draft;
     }
     dirty(files) { return !this.draft || key(files) !== key(this.draft.files); }
   }
-  const api = { Client, source, key };
+  const api = { Client, source, key, acceptSavedSource };
   root.ParkDrafts = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(globalThis);

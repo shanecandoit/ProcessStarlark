@@ -22,12 +22,13 @@ type DraftWorkspace struct {
 	id           string
 	name         string
 	files        Files
-	baseRevision string // Revision of the production version this draft is based on
+	baseRevision string // Source version of the read-only reference
 	createdAt    time.Time
 	updatedAt    time.Time
 	createdBy    string
 	head         string
 	versions     map[string]SourceVersion
+	questions    map[string]QuestionRecord
 	version      int          // Deprecated API compatibility: accepted operation count
 	history      []DraftEntry // Change history
 }
@@ -37,6 +38,7 @@ type DraftEntry struct {
 	Version      int       `json:"version"`
 	Timestamp    time.Time `json:"timestamp"`
 	Author       string    `json:"author"`
+	AuthorID     string    `json:"author_id"`
 	Message      string    `json:"message"`
 	FilesChanged []string  `json:"files_changed"`
 	Revision     string    `json:"revision"` // Project revision after this change
@@ -54,16 +56,22 @@ type DraftSnapshot struct {
 	CreatedAt      time.Time    `json:"created_at"`
 	UpdatedAt      time.Time    `json:"updated_at"`
 	CreatedBy      string       `json:"created_by"`
+	CreatedByID    string       `json:"created_by_id"`
 	Files          Files        `json:"files"`
 	Snapshot       Snapshot     `json:"snapshot"`
 	History        []DraftEntry `json:"history,omitempty"`
 }
 
-// NewDraftWorkspace creates a new draft workspace from production files.
+// NewDraftWorkspace creates a new draft workspace from reference files.
 func NewDraftWorkspace(id, name, createdBy string, prodFiles Files) (*DraftWorkspace, error) {
 	if strings.TrimSpace(id) == "" || strings.TrimSpace(name) == "" || strings.TrimSpace(createdBy) == "" {
 		return nil, fmt.Errorf("draft id, name, and author are required")
 	}
+	formatted := Format(prodFiles)
+	if formatted.Status == Error {
+		return nil, fmt.Errorf("invalid reference: %s", formatted.Message)
+	}
+	prodFiles = formatted.Files
 	// Load and validate the production files to get base revision
 	p, err := project.FromFiles("", modules(prodFiles))
 	if err != nil {
@@ -88,7 +96,7 @@ func NewDraftWorkspace(id, name, createdBy string, prodFiles Files) (*DraftWorks
 	}
 
 	// Initial snapshot
-	next, _, err := publish(dw.files, nil)
+	next, initialSnapshot, err := publish(dw.files, nil)
 	if err != nil {
 		return nil, fmt.Errorf("initial publish failed: %w", err)
 	}
@@ -96,6 +104,7 @@ func NewDraftWorkspace(id, name, createdBy string, prodFiles Files) (*DraftWorks
 	initial := newSourceVersion("", p.Revision, dw.files)
 	dw.head, dw.baseRevision = initial.ID, initial.ID
 	dw.versions = map[string]SourceVersion{initial.ID: initial}
+	dw.reconcileQuestions(initialSnapshot.Questions, createdBy, "create")
 
 	return dw, nil
 }
@@ -116,7 +125,7 @@ func (dw *DraftWorkspace) ForkAt(newID, newName, author, revision string) (*Draf
 		v, ok := dw.versions[revision]
 		if !ok {
 			dw.mu.RUnlock()
-			return nil, fmt.Errorf("source version not found")
+			return nil, ErrSourceVersionNotFound
 		}
 		files, head = clone(v.Files), v.ID
 	}
@@ -127,16 +136,13 @@ func (dw *DraftWorkspace) ForkAt(newID, newName, author, revision string) (*Draf
 	}
 	dw.mu.RUnlock()
 
-	dw2, err := NewDraftWorkspace(newID, newName, author, files)
-	if err != nil {
-		return nil, err
+	now := time.Now().UTC()
+	record := DraftRecord{Draft: DraftSnapshot{ID: newID, Name: newName, CreatedBy: author,
+		CreatedAt: now, UpdatedAt: now, BaseRevision: baseRev, Revision: head, Files: files}}
+	for id := head; id != ""; id = versions[id].Parent {
+		record.Versions = append(record.Versions, versions[id])
 	}
-	// Preserve the original base revision
-	dw2.mu.Lock()
-	dw2.baseRevision = baseRev
-	dw2.head, dw2.versions = head, versions
-	dw2.mu.Unlock()
-	return dw2, nil
+	return RestoreDraft(record)
 }
 
 // GetSnapshot returns an independent copy, including queued questions.
@@ -153,7 +159,7 @@ func (dw *DraftWorkspace) snapshotLocked(includeHistory bool) DraftSnapshot {
 	}
 	out := DraftSnapshot{ID: dw.id, Name: dw.name, BaseRevision: dw.baseRevision,
 		Revision: dw.head, SourceRevision: snap.Revision, StateToken: dw.stateTokenLocked(), Version: dw.version, CreatedAt: dw.createdAt,
-		UpdatedAt: dw.updatedAt, CreatedBy: dw.createdBy, Files: clone(dw.files), Snapshot: snap}
+		UpdatedAt: dw.updatedAt, CreatedBy: dw.createdBy, CreatedByID: LocalUserID(dw.createdBy), Files: clone(dw.files), Snapshot: snap}
 	if includeHistory {
 		out.History = append([]DraftEntry{}, dw.history...)
 		for i := range out.History {
@@ -188,7 +194,7 @@ func (dw *DraftWorkspace) Apply(ctx context.Context, author string, expectedVers
 // ApplyState checks an opaque hash token, including non-source working state.
 func (dw *DraftWorkspace) ApplyState(ctx context.Context, author, expectedState string, op DraftOperation) (Result, DraftSnapshot, error) {
 	if expectedState == "" {
-		return Result{}, dw.GetSnapshot(false), fmt.Errorf("expected_state is required")
+		return Result{}, dw.GetSnapshot(false), fmt.Errorf("%w: expected_state is required", ErrDraftInput)
 	}
 	return dw.applyExpected(ctx, author, nil, expectedState, op)
 }
@@ -201,7 +207,7 @@ func (dw *DraftWorkspace) applyExpected(ctx context.Context, author string, expe
 	dw.mu.Lock()
 	defer dw.mu.Unlock()
 	if strings.TrimSpace(author) == "" {
-		return Result{}, dw.snapshotLocked(false), fmt.Errorf("author is required")
+		return Result{}, dw.snapshotLocked(false), fmt.Errorf("%w: author is required", ErrDraftInput)
 	}
 	if expected != nil && *expected != dw.version {
 		return Result{}, dw.snapshotLocked(false), fmt.Errorf("%w: expected %d, current %d", ErrDraftConflict, *expected, dw.version)
@@ -216,23 +222,23 @@ func (dw *DraftWorkspace) applyExpected(ctx context.Context, author string, expe
 		next := clone(dw.files)
 		for name, text := range op.Files {
 			if !draftModuleName(name) {
-				return Result{}, dw.snapshotLocked(false), fmt.Errorf("invalid source file %q", name)
+				return Result{}, dw.snapshotLocked(false), fmt.Errorf("%w: invalid source file %q", ErrDraftInput, name)
 			}
 			next[name] = text
 		}
 		for _, name := range op.Delete {
 			if !draftModuleName(name) {
-				return Result{}, dw.snapshotLocked(false), fmt.Errorf("invalid source file %q", name)
+				return Result{}, dw.snapshotLocked(false), fmt.Errorf("%w: invalid source file %q", ErrDraftInput, name)
 			}
 			if _, exists := op.Files[name]; exists {
-				return Result{}, dw.snapshotLocked(false), fmt.Errorf("cannot edit and delete %q together", name)
+				return Result{}, dw.snapshotLocked(false), fmt.Errorf("%w: cannot edit and delete %q together", ErrDraftInput, name)
 			}
 			if _, exists := next[name]; !exists {
-				return Result{}, dw.snapshotLocked(false), fmt.Errorf("source file %q does not exist", name)
+				return Result{}, dw.snapshotLocked(false), fmt.Errorf("%w: source file %q does not exist", ErrDraftInput, name)
 			}
 			delete(next, name)
 		}
-		result, message = Load(next), op.Message
+		result, message = Format(next), op.Message
 		if message == "" {
 			message = "Edit source files"
 		}
@@ -244,13 +250,26 @@ func (dw *DraftWorkspace) applyExpected(ctx context.Context, author string, expe
 		result, message = AddExample(dw.files, op.Example), "Add example: "+op.Example
 	case "remove-example":
 		result, message = RemoveExample(dw.files, op.Call), "Remove example: "+op.Call
+	case "dismiss":
+		result, message = Dismiss(dw.files, op.Call), "Dismiss question: "+op.Call
+	case "format":
+		result, message = Format(dw.files), "Format source"
+	case "lint":
+		result, message = Lint(dw.files), "Lint source"
 	case "load":
 		result, message = Load(dw.files), "Refresh draft"
 	default:
-		return Result{}, dw.snapshotLocked(false), fmt.Errorf("unknown draft operation %q", op.Kind)
+		return Result{}, dw.snapshotLocked(false), fmt.Errorf("%w: unknown draft operation %q", ErrDraftInput, op.Kind)
 	}
 	if result.Status == Error {
 		return result, dw.snapshotLocked(true), nil
+	}
+	if op.Kind == "add-example" || op.Kind == "remove-example" {
+		formatted := Format(result.Files)
+		if formatted.Status == Error {
+			return formatted, dw.snapshotLocked(true), nil
+		}
+		result.Files, result.Snapshot = formatted.Files, formatted.Snapshot
 	}
 	changed := changedFiles(dw.files, result.Files)
 	dw.files = clone(result.Files)
@@ -260,8 +279,9 @@ func (dw *DraftWorkspace) applyExpected(ctx context.Context, author string, expe
 	}
 	dw.version++
 	dw.updatedAt = time.Now().UTC()
+	dw.reconcileQuestions(result.Snapshot.Questions, author, op.Kind)
 	dw.history = append(dw.history, DraftEntry{Version: dw.version, Timestamp: dw.updatedAt,
-		Author: author, Message: message, FilesChanged: changed, Revision: dw.head})
+		Author: author, AuthorID: LocalUserID(author), Message: message, FilesChanged: changed, Revision: dw.head})
 	result.Files = clone(dw.files)
 	return result, dw.snapshotLocked(true), nil
 }

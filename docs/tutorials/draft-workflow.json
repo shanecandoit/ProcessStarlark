@@ -20,7 +20,8 @@
       "capture": {
         "state": "/draft/state_token",
         "root": "/draft/revision",
-        "source": "/draft/source_revision"
+        "source": "/draft/source_revision",
+        "ops_id": "/draft/created_by_id"
       }
     },
     {
@@ -51,6 +52,23 @@
       }
     },
     {
+      "title": "Inspect the durable open question queue",
+      "method": "GET",
+      "path": "/api/v1/drafts/{draft}/questions",
+      "capture": {
+        "question_id": "/questions/0/id"
+      },
+      "expect": {
+        "status": 200,
+        "json": {
+          "/questions/0/function": "Zones.zone",
+          "/questions/0/status": "open",
+          "/questions/0/opened_by": "{ops_id}",
+          "/questions/0/opened_by_name": "ops"
+        }
+      }
+    },
+    {
       "title": "Save Germany's zone as an example",
       "method": "POST",
       "path": "/api/v1/drafts/{draft}/operations",
@@ -72,6 +90,20 @@
       "capture": {
         "state": "/draft/state_token",
         "head": "/draft/revision"
+      }
+    },
+    {
+      "title": "Verify the answered question remains in queue history",
+      "method": "GET",
+      "path": "/api/v1/drafts/{draft}/questions?status=all",
+      "expect": {
+        "status": 200,
+        "json": {
+          "/questions/0/id": "{question_id}",
+          "/questions/0/status": "resolved",
+          "/questions/0/closed_by": "{ops_id}",
+          "/questions/0/closed_by_name": "ops"
+        }
       }
     },
     {
@@ -200,7 +232,7 @@
       }
     },
     {
-      "title": "Export a normal Park project before stopping the service",
+      "title": "Export a normal Park project for sharing",
       "method": "GET",
       "path": "/api/v1/drafts/{draft}/export",
       "expect": {

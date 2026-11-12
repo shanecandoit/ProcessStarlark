@@ -11,7 +11,8 @@ import (
 
 // QuestionsFile holds calls Park could not answer. Each one waits for the user
 // to answer it: either an example for that call, or an implementation of the
-// function. It is local state for now; a later version moves it to a database.
+// function. It remains the portable CLI/browser format; the draft service also
+// persists this queue and lifecycle metadata in SQLite.
 const QuestionsFile = "questions.txt"
 
 const questionsHeader = `# Questions: calls Park could not answer on its own.

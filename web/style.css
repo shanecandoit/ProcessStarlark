@@ -344,3 +344,5 @@ td input.cell { font-family: var(--sans); padding: 6px 8px; }
 #draft-version-source { max-height: 20rem; overflow: auto; white-space: pre; }
 #draft-save-state { font-size: .8em; font-weight: normal; }
 .draft-replace { display: block; margin: .6rem 0; }
+#draft-questions p, #draft-activity li { overflow-wrap: anywhere; }
+#source-style-out { white-space: pre-wrap; overflow-wrap: anywhere; }

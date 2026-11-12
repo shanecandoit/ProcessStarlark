@@ -337,8 +337,9 @@ See [plan-web-playground.md](plan-web-playground.md) for how it's built.
 
 ## Local draft service
 
-`go run ./cmd/park-drafts --root examples/shipping` starts a separate local,
-in-memory draft API. It supports isolated edits, questions, checks, history,
+`go run ./cmd/park-drafts --root examples/shipping` starts a local draft API,
+using `.park/drafts.sqlite` by default. `--db PATH` selects a database and
+`--db ""` selects temporary memory storage. It supports isolated edits, questions, checks, history,
 conflict rejection, diffs, forking, and project exports. See the
 [tested draft guide](saas-usage.md). It does not add production commands to
 `park`. Add `--web-dir web/dist` after `sh web/build.sh` to serve the playground
@@ -350,9 +351,21 @@ and a parent pointer. `draft.source_revision` identifies source content alone.
 one saved source snapshot. Fork requests accept optional `from_revision`.
 POST operations echo `draft.state_token` as `expected_state`; stale tokens
 return 409. The legacy integer `version`/`expected_version` pair is deprecated
-and counts activity, not source versions. Source snapshots/history are in
-memory and ZIP exports do not preserve the version graph. No route promotes
-source into production.
+and counts activity, not source versions. SQLite preserves source history, state tokens, questions, actor IDs, and UTC
+dates across restart. Startup checks/applies embedded SQL migrations and records
+checksums in `schema_migrations`. `--backup NEW_FILE` creates a consistent
+standalone database and exits; it never overwrites an existing destination.
+ZIP exports do not preserve the version graph. No route promotes production.
+
+`GET /api/v1/drafts/{id}/questions` lists open queue items; `?status=all` includes
+resolved/dismissed items. Use `add-example` to answer and `dismiss` with a call
+to defer. Repeated unanswered calls deduplicate; dismissed calls reopen when
+asked again. Actor names are local attribution, not authenticated identities.
+
+Source saves normalize blank runs, trailing whitespace, and final newlines
+outside literals before hashing. Historical source is unchanged. `format` and
+`lint` operations and the playground's code tools expose formatting and basic
+style diagnostics. Syntax, signature, and example validation still apply.
 
 ## Roadmap
 

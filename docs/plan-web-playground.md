@@ -221,7 +221,8 @@ optional interface. Evaluation stays in the existing WASM worker.
 Previewing history is read-only. Editing a saved version forks its source into
 a new draft. Source typed while a save/open request runs stays local; conflicts
 retain the previous write token and local work. Switching samples or tours
-detaches the server draft. Server source history and browser questions/checks
-remain distinct. See the [usage guide](saas-usage.md#view-and-edit-source-versions-in-the-playground)
-and [version plan](plan-source-versions.md). Persistence and authenticated
-collaboration remain future work.
+detaches the server draft. Format/lint tools preserve literal content, and
+normalized save responses apply only to files unchanged since submission. The saved-source queue explicitly runs on the server and persists question
+lifecycle and attribution. Ordinary browser questions/checks remain local. See the [usage guide](saas-usage.md#view-and-edit-source-versions-in-the-playground)
+and [version plan](plan-source-versions.md). SQLite persistence and tracked migrations are implemented; authenticated
+collaboration remains future work.

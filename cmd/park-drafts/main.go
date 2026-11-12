@@ -1,4 +1,4 @@
-// Command park-drafts starts the local, in-memory draft API prototype.
+// Command park-drafts starts the local draft API with SQLite or memory storage.
 package main
 
 import (
@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/shanecandoit/ProcessStarlark/internal/draftstore"
 	"github.com/shanecandoit/ProcessStarlark/internal/project"
 	"github.com/shanecandoit/ProcessStarlark/internal/server"
 	"github.com/shanecandoit/ProcessStarlark/internal/workspace"
@@ -28,6 +29,8 @@ func run() error {
 	addr := flag.String("addr", "127.0.0.1:8081", "loopback listen address")
 	root := flag.String("root", "examples/shipping", "read-only reference project directory")
 	webDir := flag.String("web-dir", "", "optional built playground directory (run sh web/build.sh first)")
+	dbPath := flag.String("db", ".park/drafts.sqlite", "SQLite database file; empty string uses temporary memory storage")
+	backup := flag.String("backup", "", "write a consistent SQLite backup to a new file and exit")
 	flag.Parse()
 	if flag.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments; use --help")
@@ -43,7 +46,29 @@ func run() error {
 	for name, content := range p.Files {
 		files[name] = string(content)
 	}
-	handler, err := server.NewDraftHandler(files)
+	var handler http.Handler
+	storage := "memory (temporary)"
+	if *dbPath == "" {
+		if *backup != "" {
+			return fmt.Errorf("--backup requires --db")
+		}
+		handler, err = server.NewDraftHandler(files)
+	} else {
+		store, openErr := draftstore.Open(*dbPath, files)
+		if openErr != nil {
+			return openErr
+		}
+		defer store.Close()
+		if *backup != "" {
+			if err := store.Backup(context.Background(), *backup); err != nil {
+				return err
+			}
+			fmt.Printf("Backup saved: %s\n", *backup)
+			return nil
+		}
+		handler, err = server.NewStoredDraftHandler(store)
+		storage = "SQLite: " + *dbPath
+	}
 	if err != nil {
 		return err
 	}
@@ -67,7 +92,7 @@ func run() error {
 		defer cancel()
 		_ = srv.Shutdown(shutdown)
 	}()
-	fmt.Printf("Local draft API: http://%s\nReference project: %s\nStorage: memory; export drafts before stopping. Accounts and production promotion are not implemented.\n", listener.Addr(), *root)
+	fmt.Printf("Local draft API: http://%s\nReference project: %s\nStorage: %s\nAccounts and production promotion are not implemented.\n", listener.Addr(), *root, storage)
 	if err := srv.Serve(listener); err != http.ErrServerClosed {
 		return err
 	}

@@ -16,6 +16,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/shanecandoit/ProcessStarlark/internal/draftstore"
 	"github.com/shanecandoit/ProcessStarlark/internal/workspace"
 )
 
@@ -110,7 +111,31 @@ func substituteGuide(value any, variables map[string]string) any {
 // This fixture is also replayed by scripts/draft_walkthrough.py. Every documented
 // step must remain executable with the real workspace engine, without a socket.
 func TestDocumentedDraftWalkthrough(t *testing.T) {
-	handler := shippingHandler(t)
+	t.Run("memory", func(t *testing.T) { runDocumentedDraftWalkthrough(t, shippingHandler(t)) })
+	t.Run("sqlite-restart-every-request", func(t *testing.T) {
+		original := decodeResponse(t, send(shippingHandler(t), "GET", "/api/v1/base", nil))["files"].(map[string]any)
+		base := workspace.Files{}
+		for name, text := range original {
+			base[name] = text.(string)
+		}
+		path := filepath.Join(t.TempDir(), "flow.sqlite")
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			store, err := draftstore.Open(path, base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			h, err := NewStoredDraftHandler(store)
+			if err != nil {
+				t.Fatal(err)
+			}
+			h.ServeHTTP(w, r)
+		})
+		runDocumentedDraftWalkthrough(t, handler)
+	})
+}
+
+func runDocumentedDraftWalkthrough(t *testing.T, handler http.Handler) {
 	base := decodeResponse(t, send(handler, "GET", "/api/v1/base", nil))["files"]
 	data, err := os.ReadFile("../../docs/tutorials/draft-workflow.json")
 	if err != nil {

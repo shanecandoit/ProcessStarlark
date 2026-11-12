@@ -30,7 +30,10 @@
     <details id="draft-panel" class="welcome" hidden>
       <summary>Drafts and source versions <span id="draft-save-state"></span></summary>
       <div class="welcome-body">
-        <p>Save a source version on this local server. Each version keeps its files and a link to its parent. Runs and checks stay in this browser. Server drafts disappear when it stops; download work you want to keep.</p>
+        <p>Save a source version on this local server. Each version keeps its files and a link to its parent. Browser calculations stay local; use the saved-source queue below to keep questions on the server.</p>
+        <p id="draft-storage-info" class="hint">Checking server storage…</p>
+        <label for="draft-author">Your name (local attribution)</label>
+        <input id="draft-author" value="playground" maxlength="120" autocomplete="off">
         <label for="draft-name">New draft name</label>
         <input id="draft-name" value="My experiment" maxlength="120">
         <div class="draft-actions">
@@ -54,6 +57,16 @@
           <select id="draft-version-file"></select>
           <pre id="draft-version-source" class="testout" tabindex="0" aria-label="Read-only saved source"></pre>
           <button id="draft-branch" type="button" class="quiet">Edit this version in a new draft</button>
+        </details>
+        <details><summary>Recent activity</summary><p id="draft-created" class="hint"></p><ol id="draft-activity"></ol></details>
+        <details id="draft-queue">
+          <summary>Questions for saved source <span id="draft-question-count"></span></summary>
+          <p class="hint">Save local source first, then run the current input on the server. Answers and dismissals use the draft's current state token.</p>
+          <button id="draft-run" type="button" class="quiet">Run saved source</button>
+          <button id="draft-questions-refresh" type="button" class="quiet">Refresh questions</button>
+          <label><input id="draft-questions-all" type="checkbox"> Show closed questions</label>
+          <p id="draft-server-result" role="status"></p>
+          <ul id="draft-questions" class="questions"></ul>
         </details>
       </div>
     </details>
@@ -150,6 +163,8 @@
 
   <section id="source-pane" class="pane source" hidden aria-label="Source files">
     <div class="source-heading"><h2>Code workspace</h2><button id="code-close" type="button" class="quiet">Hide code</button></div>
+    <div class="draft-actions"><button id="format-source" type="button" class="quiet">Format source</button><button id="lint-source" type="button" class="quiet">Lint source</button></div>
+    <pre id="source-style-out" class="hint" role="status"></pre>
     <div class="tabs" id="tabs" role="tablist"></div>
     <textarea id="editor" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Source"></textarea>
     <p id="problem" class="problem" role="status" hidden></p>

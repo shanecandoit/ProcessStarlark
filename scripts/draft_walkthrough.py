@@ -56,6 +56,10 @@ def main():
     if status != 200:
         raise RuntimeError("Cannot read the reference project: " + raw.decode())
     reference = json.loads(raw)["files"]
+    storage_status, storage_raw, _ = request(args.url, {"method": "GET", "path": "/api/v1/storage"})
+    if storage_status != 200:
+        raise RuntimeError("Cannot read storage mode")
+    storage = json.loads(storage_raw)["storage"]
     for number, template in enumerate(guide["steps"], 1):
         step = substitute(template)
         status, raw, content_type = request(args.url, step)
@@ -89,11 +93,12 @@ def main():
                 raise RuntimeError("The reference project changed")
         print(f"{number:2}. {step['title']} — OK")
     print(f"\nDraft: {args.draft_id}. Source version: {variables['head']}. Quote: 2799 cents ($27.99).")
-    print("Nothing was promoted. Drafts are in memory and disappear when the service stops.")
+    print("Nothing was promoted.")
+    print("SQLite drafts and server questions survive restarts; keep a database backup." if storage == "sqlite" else "Memory mode: drafts disappear when the service stops.")
     if args.export:
         print(f"Export: {args.export}")
     else:
-        print(f"Export before stopping: GET {args.url}/api/v1/drafts/{args.draft_id}/export")
+        print(f"Project export: GET {args.url}/api/v1/drafts/{args.draft_id}/export")
 
 
 if __name__ == "__main__":

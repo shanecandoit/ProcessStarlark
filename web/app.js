@@ -494,6 +494,7 @@ function setCall(text) {
   const expression = view.expressionFromCall(text);
   state.friendlyInput = expression !== null && preferences.rawCall !== true;
   $("expression").value = expression ?? "";
+  serverPanel?.render();
 }
 function renderInput() {
   const fn = functionFor("WordAdd.eval");
@@ -1006,12 +1007,17 @@ async function start() {
   toggleCode(preferences.code === true, false);
   $("code-toggle").addEventListener("click", () => toggleCode($("source-pane").hidden));
   $("code-close").addEventListener("click", () => { toggleCode(false); $("code-toggle").focus(); });
+  for (const op of ["format", "lint"]) $(op + "-source").addEventListener("click", async () => {
+    const result = await call(op);
+    if (result.obsolete) return;
+    $("source-style-out").textContent = [...(result.lines || []).map(line => line.text), result.message || ""].join("\n");
+  });
   $("welcome").addEventListener("toggle", () => { preferences.welcome = $("welcome").open; savePreferences(); renderInput(); });
   $("why").addEventListener("toggle", () => { preferences.explanation = $("why").open; savePreferences(); });
   $("welcome-tour").addEventListener("click", () => startTour(tours()[0]?.id));
   $("expression").addEventListener("input", () => {
     $("call").value = `WordAdd.eval(${JSON.stringify($("expression").value)})`;
-    save(); renderResult();
+    save(); renderResult(); serverPanel?.render();
   });
   $("input-toggle").addEventListener("click", () => {
     if (state.friendlyInput) { state.friendlyInput = false; preferences.rawCall = true; }
@@ -1040,7 +1046,7 @@ async function start() {
   $("download").addEventListener("click", download);
   $("stop").addEventListener("click", () => engine.stop());
   $("runform").addEventListener("submit", (e) => { e.preventDefault(); run($("call").value); });
-  $("call").addEventListener("input", () => { save(); renderResult(); });
+  $("call").addEventListener("input", () => { save(); renderResult(); serverPanel?.render(); });
   editor.onEdit(edited);
   $("test").addEventListener("click", runTests);
   picker.append(el("option", { value: String(TOUR_SAMPLE), disabled: true }, "Guided tour"));
@@ -1070,6 +1076,14 @@ async function start() {
   // project, and on a first visit, the default sample with an optional guide.
   if (globalThis.PARK_DRAFT_API) serverPanel = globalThis.ParkDraftPanel.initialize({
     files: () => state.files,
+    call: () => $("call").value,
+    saved: async (submitted, remote) => {
+      const next = globalThis.ParkDrafts.acceptSavedSource(submitted,state.files,remote);
+      if (view.projectKey(next) === view.projectKey(state.files)) return;
+      state.files = next;
+      render(); save();
+      await call("load");
+    },
     pending: () => Object.entries(state.drafts).some(([row, cells]) => functionFor(row.split("\0")[0]) && cells.some(value => value.trim())) || (state.snapshot?.questions || []).some(q => state.questionDrafts[q.call]?.trim()),
     workingKey: () => JSON.stringify([view.projectKey(state.files), state.drafts, state.questionDrafts]),
     replace: files => { endTour(); return loadProject({ files, call: $("call").value, sample: -1, serverDraft: true }); },

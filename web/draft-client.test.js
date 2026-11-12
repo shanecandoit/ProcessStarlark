@@ -1,6 +1,6 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { Client } = require("./draft-client.js");
+const { Client, acceptSavedSource } = require("./draft-client.js");
 
 function fixture(responses) {
   const requests = [];
@@ -68,4 +68,35 @@ test("failed initial source save does not attach an unrelated server reference",
   client.draft = draft("original");
   await assert.rejects(client.create("candidate", "New", { "bad.star": "invalid" }), /invalid source/);
   assert.equal(client.draft.id, "original");
+});
+
+test("normalized saves converge without overwriting source typed during a request or browser questions", () => {
+  const submitted = { "a.star": "a\n\n\n", "b.star": "b\n\n\n", "questions.txt": "local queue" };
+  const current = { ...submitted, "b.star": "newer typing", "new.star": "new file" };
+  const remote = { "a.star": "a\n", "b.star": "b\n", "questions.txt": "server queue" };
+  assert.deepEqual(acceptSavedSource(submitted, current, remote), {
+    "a.star": "a\n", "b.star": "newer typing", "new.star": "new file", "questions.txt": "local queue",
+  });
+  assert.equal(current["a.star"], "a\n\n\n");
+});
+
+test("saved-source question flow advances hash tokens and keeps local actor attribution", async () => {
+  const initial = draft();
+  const queued = { ...initial, state_token: "queued", snapshot: { questions: [{ call: 'Words.value("twelve")' }] } };
+  const answered = { ...queued, state_token: "answered", revision: "child" };
+  const { client, requests } = fixture([
+    { value: { draft: queued, result: { status: "unresolved" } } },
+    { value: { questions: [{ id: "q", status: "open" }] } },
+    { value: { draft: answered, result: { status: "ok" } } },
+    { value: { questions: [{ id: "q", status: "resolved" }] } },
+  ]);
+  client.author = "Shane"; client.draft = initial;
+  assert.equal((await client.operation({ kind: "run", call: 'Words.value("twelve")' })).status, "unresolved");
+  assert.equal(client.draft.revision, initial.revision);
+  assert.equal((await client.questions())[0].status, "open");
+  await client.operation({ kind: "add-example", example: 'Words.value("twelve") == 12' });
+  assert.equal((await client.questions(true))[0].status, "resolved");
+  assert.equal(requests[0].body.author, "Shane");
+  assert.equal(requests[2].body.expected_state, "queued");
+  assert.equal(requests[3].path, "/api/v1/drafts/demo/questions?status=all");
 });

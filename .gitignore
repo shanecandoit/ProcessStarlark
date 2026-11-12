@@ -1,3 +1,4 @@
 /park
 .cache/
 /web/dist/
+/.park/
