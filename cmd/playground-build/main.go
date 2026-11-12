@@ -63,6 +63,9 @@ func build() error {
 		filepath.Join("web", "index.html"):      "index.html",
 		filepath.Join("web", "app.js"):          "app.js",
 		filepath.Join("web", "presentation.js"): "presentation.js",
+		filepath.Join("web", "draft-config.js"): "draft-config.js",
+		filepath.Join("web", "draft-client.js"): "draft-client.js",
+		filepath.Join("web", "draft-panel.js"):  "draft-panel.js",
 		filepath.Join("web", "style.css"):       "style.css",
 		filepath.Join("web", "worker.js"):       "worker.js",
 	}

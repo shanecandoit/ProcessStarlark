@@ -341,7 +341,18 @@ See [plan-web-playground.md](plan-web-playground.md) for how it's built.
 in-memory draft API. It supports isolated edits, questions, checks, history,
 conflict rejection, diffs, forking, and project exports. See the
 [tested draft guide](saas-usage.md). It does not add production commands to
-`park`, and it is not connected to the static playground yet.
+`park`. Add `--web-dir web/dist` after `sh web/build.sh` to serve the playground
+with an optional draft save/history panel on the same origin.
+
+`draft.revision` is an immutable SHA-256 source version with full `.star` files
+and a parent pointer. `draft.source_revision` identifies source content alone.
+`GET /api/v1/drafts/{id}/versions` walks its ancestry; append `/{revision}` for
+one saved source snapshot. Fork requests accept optional `from_revision`.
+POST operations echo `draft.state_token` as `expected_state`; stale tokens
+return 409. The legacy integer `version`/`expected_version` pair is deprecated
+and counts activity, not source versions. Source snapshots/history are in
+memory and ZIP exports do not preserve the version graph. No route promotes
+source into production.
 
 ## Roadmap
 

@@ -182,7 +182,17 @@ go run ./cmd/park-drafts --root examples/shipping
 In another terminal, run `python3 scripts/draft_walkthrough.py`. Follow the
 [draft guide](docs/saas-usage.md) to export a project before stopping: draft
 storage is in memory. Accounts, production promotion, and durable hosted
-storage are planned; the existing playground is separate from this API.
+storage are planned. To use the playground with explicit draft saves and
+SHA-256 source versions with parent links:
+
+```sh
+sh web/build.sh
+go run ./cmd/park-drafts --root examples/word-addition --web-dir web/dist
+```
+
+Open `http://127.0.0.1:8081` and expand **Drafts and source versions**. Save,
+inspect an earlier version, or edit it in a new draft. See the
+[source version plan](docs/plan-source-versions.md).
 
 ## Learn more
 

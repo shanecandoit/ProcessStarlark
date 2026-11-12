@@ -39,9 +39,12 @@ def main():
         parser.error("draft id must be 1-64 letters, digits, _ or -")
     args.url = args.url.rstrip("/")
     fixture = Path(__file__).resolve().parents[1] / "docs/tutorials/draft-workflow.json"
+    variables = {"draft": args.draft_id}
     def substitute(value):
         if isinstance(value, str):
-            return value.replace("{draft}", args.draft_id)
+            for key, replacement in variables.items():
+                value = value.replace("{" + key + "}", replacement)
+            return value
         if isinstance(value, list):
             return [substitute(item) for item in value]
         if isinstance(value, dict):
@@ -53,7 +56,8 @@ def main():
     if status != 200:
         raise RuntimeError("Cannot read the reference project: " + raw.decode())
     reference = json.loads(raw)["files"]
-    for number, step in enumerate(guide["steps"], 1):
+    for number, template in enumerate(guide["steps"], 1):
+        step = substitute(template)
         status, raw, content_type = request(args.url, step)
         expected = step["expect"]
         if status != expected["status"]:
@@ -72,6 +76,11 @@ def main():
                     output.write(raw)
         else:
             value = json.loads(raw)
+            for key, path in step.get("capture", {}).items():
+                captured = pointer(value, path)
+                if not isinstance(captured, str) or not re.fullmatch(r"[0-9a-f]{64}", captured):
+                    raise RuntimeError(f"Expected a full SHA-256 ID at {path}")
+                variables[key] = captured
             for path, wanted in expected.get("json", {}).items():
                 actual = pointer(value, path)
                 if actual != wanted:
@@ -79,7 +88,7 @@ def main():
             if expected.get("reference_unchanged") and value["files"] != reference:
                 raise RuntimeError("The reference project changed")
         print(f"{number:2}. {step['title']} — OK")
-    print(f"\nDraft: {args.draft_id} (version 4). Quote: 2799 cents ($27.99).")
+    print(f"\nDraft: {args.draft_id}. Source version: {variables['head']}. Quote: 2799 cents ($27.99).")
     print("Nothing was promoted. Drafts are in memory and disappear when the service stops.")
     if args.export:
         print(f"Export: {args.export}")

@@ -337,3 +337,10 @@ td input.cell { font-family: var(--sans); padding: 6px 8px; }
 .row-actions-heading { width: 90px; }
 #question-slot .questions-section { margin: 20px 0 10px; }
 #question-slot .questions > li { background: var(--bg); }
+/* Saved source is an optional workspace tool; preview never edits working code. */
+.draft-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin: .75rem 0; }
+#draft-panel input, #draft-panel select { max-width: 100%; margin: .3rem .4rem .3rem 0; }
+#draft-version-id { overflow-wrap: anywhere; }
+#draft-version-source { max-height: 20rem; overflow: auto; white-space: pre; }
+#draft-save-state { font-size: .8em; font-weight: normal; }
+.draft-replace { display: block; margin: .6rem 0; }

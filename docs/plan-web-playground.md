@@ -201,9 +201,27 @@ as belonging to the previous input. Check results have their own staleness
 notice. Source files typed while an engine operation runs are preserved; a
 result from a previous project cannot replace the currently selected project.
 
-Frontend model checks run with `node --test web/presentation.test.js` (Node is
+Frontend model checks run with `node --test web/*.test.js` (Node is
 only needed for these developer checks). `go test ./...` checks the structured
 bridge, sample projects, and all tour replays. Build with `sh web/build.sh`.
 Browser verification should include the full missing-answer/reuse flow,
 exact-example shortcuts, editing from a visual step, stale navigation,
 independent check results, preference persistence, and a narrow viewport.
+
+
+## Local source version workflow
+
+Build with `sh web/build.sh`, then run `go run ./cmd/park-drafts --root
+examples/word-addition --web-dir web/dist` (as one shell command). The local
+service overrides `draft-config.js` to enable a collapsed draft panel. Static
+hosting keeps it disabled. `draft-client.js` handles explicit source saves,
+state-token preconditions, and historical forks; `draft-panel.js` owns the
+optional interface. Evaluation stays in the existing WASM worker.
+
+Previewing history is read-only. Editing a saved version forks its source into
+a new draft. Source typed while a save/open request runs stays local; conflicts
+retain the previous write token and local work. Switching samples or tours
+detaches the server draft. Server source history and browser questions/checks
+remain distinct. See the [usage guide](saas-usage.md#view-and-edit-source-versions-in-the-playground)
+and [version plan](plan-source-versions.md). Persistence and authenticated
+collaboration remain future work.

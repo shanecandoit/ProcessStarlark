@@ -84,6 +84,29 @@ func jsonPointer(value any, path string) (any, error) {
 	return value, nil
 }
 
+func substituteGuide(value any, variables map[string]string) any {
+	switch v := value.(type) {
+	case string:
+		for name, replacement := range variables {
+			v = strings.ReplaceAll(v, "{"+name+"}", replacement)
+		}
+		return v
+	case map[string]any:
+		out := map[string]any{}
+		for k, item := range v {
+			out[k] = substituteGuide(item, variables)
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = substituteGuide(item, variables)
+		}
+		return out
+	}
+	return value
+}
+
 // This fixture is also replayed by scripts/draft_walkthrough.py. Every documented
 // step must remain executable with the real workspace engine, without a socket.
 func TestDocumentedDraftWalkthrough(t *testing.T) {
@@ -98,6 +121,7 @@ func TestDocumentedDraftWalkthrough(t *testing.T) {
 		Steps []struct {
 			Title, Method, Path string
 			Body                any
+			Capture             map[string]string
 			Expect              struct {
 				Status             int
 				JSON               map[string]any
@@ -110,9 +134,10 @@ func TestDocumentedDraftWalkthrough(t *testing.T) {
 	if err := json.Unmarshal(data, &guide); err != nil {
 		t.Fatal(err)
 	}
+	variables := map[string]string{}
 	for _, step := range guide.Steps {
 		t.Run(step.Title, func(t *testing.T) {
-			w := send(handler, step.Method, step.Path, step.Body)
+			w := send(handler, step.Method, step.Path, substituteGuide(step.Body, variables))
 			if w.Code != step.Expect.Status {
 				t.Fatalf("status %d, want %d: %s", w.Code, step.Expect.Status, w.Body.String())
 			}
@@ -136,7 +161,16 @@ func TestDocumentedDraftWalkthrough(t *testing.T) {
 				return
 			}
 			value := decodeResponse(t, w)
+			for name, path := range step.Capture {
+				captured, err := jsonPointer(value, path)
+				hash, ok := captured.(string)
+				if err != nil || !ok || len(hash) != 64 || strings.Trim(hash, "0123456789abcdef") != "" {
+					t.Fatalf("expected full SHA-256 ID at %s: %v (%v)", path, captured, err)
+				}
+				variables[name] = hash
+			}
 			for path, want := range step.Expect.JSON {
+				want = substituteGuide(want, variables)
 				got, err := jsonPointer(value, path)
 				if err != nil || !reflect.DeepEqual(got, want) {
 					t.Errorf("%s: got %#v (%v), want %#v", path, got, err, want)

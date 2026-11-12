@@ -14,9 +14,13 @@
       "expect": {
         "status": 201,
         "json": {
-          "/draft/version": 0,
           "/draft/created_by": "ops"
         }
+      },
+      "capture": {
+        "state": "/draft/state_token",
+        "root": "/draft/revision",
+        "source": "/draft/source_revision"
       }
     },
     {
@@ -25,20 +29,25 @@
       "path": "/api/v1/drafts/{draft}/operations",
       "body": {
         "author": "ops",
-        "expected_version": 0,
         "operation": {
           "kind": "run",
           "call": "Shipping.quote(\"DE\", 800)"
-        }
+        },
+        "expected_state": "{state}"
       },
       "expect": {
         "status": 200,
         "json": {
-          "/draft/version": 1,
           "/result/status": "unresolved",
           "/draft/snapshot/questions/0/function": "Zones.zone",
-          "/draft/snapshot/questions/0/input/country": "\"DE\""
+          "/draft/snapshot/questions/0/input/country": "\"DE\"",
+          "/draft/revision": "{root}",
+          "/draft/source_revision": "{source}"
         }
+      },
+      "capture": {
+        "state": "/draft/state_token",
+        "stale_state": "/draft/state_token"
       }
     },
     {
@@ -47,19 +56,22 @@
       "path": "/api/v1/drafts/{draft}/operations",
       "body": {
         "author": "ops",
-        "expected_version": 1,
         "operation": {
           "kind": "add-example",
           "example": "Zones.zone(\"DE\") == \"international\""
-        }
+        },
+        "expected_state": "{state}"
       },
       "expect": {
         "status": 200,
         "json": {
-          "/draft/version": 2,
           "/result/status": "ok",
           "/draft/snapshot/questions": []
         }
+      },
+      "capture": {
+        "state": "/draft/state_token",
+        "head": "/draft/revision"
       }
     },
     {
@@ -68,19 +80,22 @@
       "path": "/api/v1/drafts/{draft}/operations",
       "body": {
         "author": "ops",
-        "expected_version": 2,
         "operation": {
           "kind": "run",
           "call": "Shipping.quote(\"DE\", 800)"
-        }
+        },
+        "expected_state": "{state}"
       },
       "expect": {
         "status": 200,
         "json": {
-          "/draft/version": 3,
           "/result/status": "ok",
-          "/result/output": "2799"
+          "/result/output": "2799",
+          "/draft/revision": "{head}"
         }
+      },
+      "capture": {
+        "state": "/draft/state_token"
       }
     },
     {
@@ -89,17 +104,20 @@
       "path": "/api/v1/drafts/{draft}/operations",
       "body": {
         "author": "developer",
-        "expected_version": 3,
         "operation": {
           "kind": "test"
-        }
+        },
+        "expected_state": "{state}"
       },
       "expect": {
         "status": 200,
         "json": {
-          "/draft/version": 4,
-          "/result/status": "ok"
+          "/result/status": "ok",
+          "/draft/revision": "{head}"
         }
+      },
+      "capture": {
+        "state": "/draft/state_token"
       }
     },
     {
@@ -109,7 +127,6 @@
       "expect": {
         "status": 200,
         "json": {
-          "/draft_version": 4,
           "/files_changed": [
             "zones.star"
           ],
@@ -117,7 +134,22 @@
           "/function_changes/0/qualified": "Shipping.quote",
           "/function_changes/1/qualified": "Zones.zone",
           "/function_changes/1/examples_added": 1,
-          "/function_changes/1/body_changed": false
+          "/function_changes/1/body_changed": false,
+          "/draft_revision": "{head}"
+        }
+      }
+    },
+    {
+      "title": "Inspect immutable source versions and their parent links",
+      "method": "GET",
+      "path": "/api/v1/drafts/{draft}/versions",
+      "expect": {
+        "status": 200,
+        "json": {
+          "/versions/0/id": "{head}",
+          "/versions/0/parent": "{root}",
+          "/versions/1/id": "{root}",
+          "/versions/1/parent": ""
         }
       }
     },
@@ -127,16 +159,16 @@
       "path": "/api/v1/drafts/{draft}/operations",
       "body": {
         "author": "other-editor",
-        "expected_version": 1,
         "operation": {
           "kind": "add-example",
           "example": "Zones.zone(\"JP\") == \"international\""
-        }
+        },
+        "expected_state": "{stale_state}"
       },
       "expect": {
         "status": 409,
         "json": {
-          "/draft/version": 4
+          "/draft/revision": "{head}"
         }
       }
     },
@@ -147,10 +179,10 @@
       "expect": {
         "status": 200,
         "json": {
-          "/draft/version": 4,
           "/draft/history/0/author": "ops",
           "/draft/history/3/author": "developer",
-          "/draft/snapshot/questions": []
+          "/draft/snapshot/questions": [],
+          "/draft/revision": "{head}"
         }
       }
     },

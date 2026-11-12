@@ -2,7 +2,9 @@
 
 Status: local draft API prototype implemented, 2026-11-11. Hosted accounts,
 durable storage, approvals, production releases, and billing are planned.
-The static playground and the local draft API are separate experiences today.
+The local service can serve the playground with explicit draft saves and
+immutable source history; the public static playground remains browser-only.
+See the [source version plan](plan-source-versions.md) for this implementation.
 
 Start with the [tested usage guide](saas-usage.md). Its
 [workflow data](tutorials/draft-workflow.json) is replayed by
@@ -29,7 +31,9 @@ reusable answer, not merely a diagram or a version hash.
 | Function hashes and `park version list` | Implemented, experimental identity scheme | `internal/engine/version.go`; version tests |
 | Draft operations, snapshots, history, forking, source/function diff | Implemented in memory | `internal/workspace/draft.go` and regression tests |
 | Local HTTP draft service | Implemented | `go run ./cmd/park-drafts --root examples/shipping` |
-| Stale-write rejection | Implemented | Expected operation version checked under the draft lock; HTTP 409 |
+| Immutable source versions | Implemented in memory | SHA-256 IDs, complete source snapshots, parent links, historical forks |
+| Playground draft saves/history | Implemented locally | Optional panel via `--web-dir web/dist`; explicit save and branch |
+| Stale-write rejection | Implemented | SHA-256 working-state token checked under the draft lock; HTTP 409 |
 | Export a draft as an ordinary Park project | Implemented | ZIP export endpoint and walkthrough test |
 | Durable draft storage and authenticated collaboration | Planned | Required before a hosted pilot |
 | Review, promote, production evaluation, rollback | Planned | No production pointer or promotion command exists |
@@ -55,13 +59,14 @@ access to a server draft.
    changed function body.
 7. Export code, examples, questions, and catalog before stopping the process.
 
-Each accepted operation advances the draft's integer version and records its
-actor label and actual changed files. Runs and checks are operations too, even
-when source is unchanged. The source revision is a separate content revision.
-GETs do not advance the operation version. Rejected operations leave the files,
-version, and history unchanged.
+Source versions are immutable SHA-256 objects with full source and parent links.
+A draft points to its head. Only changed source creates a version; runs/checks
+and queued questions do not. A separate opaque `state_token` guards accepted
+operations, including changes to questions and activity. The integer `version`
+is retained solely as a deprecated compatibility counter. Rejected operations
+leave source, head, token, and history unchanged. GETs do not change state.
 
-Mutations hold the draft lock from version comparison through evaluation and
+Mutations hold the draft lock from state-token comparison through evaluation and
 commit. This prevents an old run or example edit from overwriting a newer edit.
 Different drafts can operate independently. This initial serialization trades
 throughput for a simple, testable consistency model; it is not a claim about
@@ -70,8 +75,9 @@ real-time multi-user editing performance.
 The HTTP service accepts JSON requests up to 4 MiB and at most 16 drafts. The
 command binds only to loopback IPs. Requests from foreign browser origins are
 rejected; there are no CORS permissions. These development boundaries are not
-an authentication system. The service has no persistence and no integration
-with the playground worker yet.
+an authentication system. The service has no persistence. With `--web-dir`, the playground evaluates
+in WASM and explicitly saves source through the API; it does not upload browser
+questions or check reports.
 
 ## Milestone 2: durable, authenticated pilot
 
@@ -135,8 +141,9 @@ rollback restores the previous complete behavior under concurrent requests.
 
 ## Version identity hardening before release storage or shared caches
 
-The current implementation is useful for inspecting changes, but needs more
-work before hashes become durable production identities:
+Whole-project source versions hash exact source bytes and ancestry, including
+helpers, constants, indentation, and literals. The following gaps concern the
+separate experimental **per-function** hash/cache scheme:
 
 - Body normalization currently collapses whitespace textually. It must preserve
   whitespace inside literals and the semantics of block indentation.
@@ -205,16 +212,18 @@ concepts. "Ready" means enough examples under policy, not "checked" or "live."
 | Release | Not implemented | Pinned checks, roles, atomic activation, stale approvals, rollback |
 
 Run `go test ./...`, `go test -race ./internal/workspace ./internal/server`,
-`node --test web/presentation.test.js`, and `sh web/build.sh` before merging.
+`node --test web/*.test.js`, and `sh web/build.sh` before merging.
 Replay the guide against a real local service as well as the in-process tests.
 Do not claim hosted readiness, compliance, performance, or completed phases
 based only on the presence of a struct or a green example walkthrough.
 
 ## Next implementation sequence
 
-1. Harden version identity and add the regression cases above.
+1. Harden per-function cache identity and add the regression cases above.
+   Immutable whole-project source versions and local playground history are built.
 2. Choose a durable store and implement authenticated, scoped draft transactions.
-3. Connect the existing playground to that service with conflict recovery.
+3. Extend the local playground connection to authenticated durable workspaces
+   and pinned server check reports.
 4. Build pinned review requests and immutable whole-project releases.
 5. Add release-only evaluation and operational recovery, then consider billing
    and additional integrations after the pilot workflow is demonstrated.

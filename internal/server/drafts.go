@@ -35,14 +35,16 @@ type response struct {
 }
 
 type createRequest struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Author string `json:"author"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Author       string `json:"author"`
+	FromRevision string `json:"from_revision,omitempty"`
 }
 
 type operationRequest struct {
 	Author          string                   `json:"author"`
 	ExpectedVersion *int                     `json:"expected_version"`
+	ExpectedState   string                   `json:"expected_state"`
 	Operation       workspace.DraftOperation `json:"operation"`
 }
 
@@ -68,6 +70,8 @@ func NewDraftHandler(base workspace.Files) (http.Handler, error) {
 	mux.HandleFunc("GET /api/v1/drafts/{id}/diff", api.diff)
 	mux.HandleFunc("GET /api/v1/drafts/{id}/export", api.export)
 	mux.HandleFunc("POST /api/v1/drafts/{id}/fork", api.fork)
+	mux.HandleFunc("GET /api/v1/drafts/{id}/versions", api.versions)
+	mux.HandleFunc("GET /api/v1/drafts/{id}/versions/{revision}", api.version)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")
@@ -121,6 +125,10 @@ func (api *draftAPI) createDraft(w http.ResponseWriter, r *http.Request, req cre
 		writeError(w, http.StatusBadRequest, "id (1-64 letters, digits, _ or -), name, and author are required")
 		return
 	}
+	if from == "" && req.FromRevision != "" {
+		writeError(w, http.StatusBadRequest, "from_revision is only supported when forking a draft")
+		return
+	}
 	api.createMu.Lock()
 	defer api.createMu.Unlock()
 	if _, exists := api.drafts.Get(req.ID); exists {
@@ -136,7 +144,7 @@ func (api *draftAPI) createDraft(w http.ResponseWriter, r *http.Request, req cre
 	if from == "" {
 		draft, err = api.drafts.Create(req.ID, req.Name, req.Author, api.base)
 	} else {
-		draft, err = api.drafts.Fork(from, req.ID, req.Name, req.Author)
+		draft, err = api.drafts.ForkAt(from, req.ID, req.Name, req.Author, req.FromRevision)
 	}
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -170,17 +178,28 @@ func (api *draftAPI) operation(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	if req.ExpectedVersion == nil {
-		writeError(w, http.StatusPreconditionRequired, "expected_version is required; fetch the latest draft before changing it")
+	if req.ExpectedVersion == nil && req.ExpectedState == "" {
+		writeError(w, http.StatusPreconditionRequired, "expected_state is required; fetch the latest draft before changing it (legacy expected_version is also accepted)")
 		return
 	}
-	if *req.ExpectedVersion < 0 {
+	if req.ExpectedVersion != nil && req.ExpectedState != "" {
+		writeError(w, http.StatusBadRequest, "send expected_state or legacy expected_version, not both")
+		return
+	}
+	if req.ExpectedVersion != nil && *req.ExpectedVersion < 0 {
 		writeError(w, http.StatusBadRequest, "expected_version must be nonnegative")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	result, snap, err := draft.Apply(ctx, req.Author, *req.ExpectedVersion, req.Operation)
+	var result workspace.Result
+	var snap workspace.DraftSnapshot
+	var err error
+	if req.ExpectedState != "" {
+		result, snap, err = draft.ApplyState(ctx, req.Author, req.ExpectedState, req.Operation)
+	} else {
+		result, snap, err = draft.Apply(ctx, req.Author, *req.ExpectedVersion, req.Operation)
+	}
 	if err != nil {
 		if errors.Is(err, workspace.ErrDraftConflict) {
 			writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "draft": snap})
@@ -223,6 +242,7 @@ func (api *draftAPI) export(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", `attachment; filename="park-draft.zip"`)
 	w.Header().Set("X-Park-Draft-Version", fmt.Sprint(snap.Version))
+	w.Header().Set("X-Park-Source-Version", snap.Revision)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(result.Archive)
 }
@@ -236,6 +256,23 @@ func (api *draftAPI) fork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.createDraft(w, r, req, r.PathValue("id"))
+}
+
+func (api *draftAPI) versions(w http.ResponseWriter, r *http.Request) {
+	if draft := api.find(w, r); draft != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"versions": draft.Versions()})
+	}
+}
+
+func (api *draftAPI) version(w http.ResponseWriter, r *http.Request) {
+	if draft := api.find(w, r); draft != nil {
+		v, ok := draft.SourceVersion(r.PathValue("revision"))
+		if !ok {
+			writeError(w, http.StatusNotFound, "source version not found in this draft")
+			return
+		}
+		writeJSON(w, http.StatusOK, v)
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

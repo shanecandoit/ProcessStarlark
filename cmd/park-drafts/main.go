@@ -27,6 +27,7 @@ func main() {
 func run() error {
 	addr := flag.String("addr", "127.0.0.1:8081", "loopback listen address")
 	root := flag.String("root", "examples/shipping", "read-only reference project directory")
+	webDir := flag.String("web-dir", "", "optional built playground directory (run sh web/build.sh first)")
 	flag.Parse()
 	if flag.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments; use --help")
@@ -45,6 +46,12 @@ func run() error {
 	handler, err := server.NewDraftHandler(files)
 	if err != nil {
 		return err
+	}
+	if *webDir != "" {
+		handler, err = server.WithPlayground(handler, *webDir)
+		if err != nil {
+			return err
+		}
 	}
 	listener, err := net.Listen("tcp", *addr)
 	if err != nil {

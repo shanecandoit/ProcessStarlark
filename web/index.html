@@ -27,6 +27,36 @@
 
 
   <section class="pane work" aria-label="Run and answer">
+    <details id="draft-panel" class="welcome" hidden>
+      <summary>Drafts and source versions <span id="draft-save-state"></span></summary>
+      <div class="welcome-body">
+        <p>Save a source version on this local server. Each version keeps its files and a link to its parent. Runs and checks stay in this browser. Server drafts disappear when it stops; download work you want to keep.</p>
+        <label for="draft-name">New draft name</label>
+        <input id="draft-name" value="My experiment" maxlength="120">
+        <div class="draft-actions">
+          <button id="draft-create" type="button" class="quiet">Save as new draft</button>
+          <button id="draft-save" type="button" disabled>Save source version</button>
+          <a id="draft-export" hidden>Download server draft</a>
+        </div>
+        <label for="draft-picker">Server drafts</label>
+        <select id="draft-picker"><option value="">Choose a draft</option></select>
+        <button id="draft-refresh" type="button" class="quiet">Refresh list</button>
+        <label id="draft-replace-warning" class="draft-replace"><input id="draft-replace-ok" type="checkbox"> Replace my current browser source when opening a server copy. Save or download local work first.</label>
+        <button id="draft-open" type="button" class="quiet">Open selected draft</button>
+        <p id="draft-message" role="status">No server draft open. Your working project stays in this browser until you save it.</p>
+        <p class="hint">On a conflict, local edits stay here. Inspect the latest server version below, open the server copy, or save your local work as a new draft.</p>
+        <label for="draft-versions">Saved source versions (newest first)</label>
+        <select id="draft-versions"><option value="">No saved versions</option></select>
+        <details id="draft-version-preview" hidden>
+          <summary>Inspect saved source or edit a copy</summary>
+          <p id="draft-version-id" class="hint"></p>
+          <label for="draft-version-file">Saved file</label>
+          <select id="draft-version-file"></select>
+          <pre id="draft-version-source" class="testout" tabindex="0" aria-label="Read-only saved source"></pre>
+          <button id="draft-branch" type="button" class="quiet">Edit this version in a new draft</button>
+        </details>
+      </div>
+    </details>
     <section id="tour" class="tourpanel" hidden aria-live="polite" aria-label="Guided tour">
       <div class="tourhead">
         <span id="tourrole" class="role"></span>
@@ -133,6 +163,9 @@
 <script src="samples.js"></script>
 <script src="tours.js"></script>
 <script src="presentation.js"></script>
+<script src="draft-config.js"></script>
+<script src="draft-client.js"></script>
+<script src="draft-panel.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -11,6 +11,7 @@ const TOUR_PREFIX = "#tour=";      // #tour=shipping or #tour=shipping/4 (1-base
 const TOUR_SAMPLE = -2;            // state.sample while touring
 const $ = (id) => document.getElementById(id);
 const view = globalThis.ParkView;
+let serverPanel = null;
 const UI_KEY = "park-playground-ui-v1";
 const preferences = (() => {
   try { return JSON.parse(localStorage.getItem(UI_KEY) || "null") || {}; } catch { return {}; }
@@ -236,6 +237,7 @@ function errorLocation(text) {
 // ---- Rendering ------------------------------------------------------------
 
 function render() {
+  serverPanel?.render();
   renderTabs();
   renderEditor();
   renderProblem();
@@ -297,7 +299,7 @@ function question(q) {
   const textAnswer = view.textOutput(functionFor(q.function));
   const prompt = word !== null ? `What number does “${word}” mean?` : q.function === "Zones.zone" ? `Which shipping zone is “${view.readable(q.input?.country)}” in?` : `${q.hasProposal ? "Confirm an answer for" : "What is the answer for"} ${view.title(q.function)}?`;
   const value = el("input", { "aria-label": prompt, placeholder: word !== null ? "Number" : textAnswer ? "Text answer" : 'Answer, e.g. 9 or "text"', spellcheck: "false", value: state.questionDrafts[q.call] ?? (q.hasProposal ? textAnswer ? view.readable(q.proposed) : q.proposed : ""), inputmode: word !== null ? "numeric" : "text" });
-  value.addEventListener("input", () => { state.questionDrafts[q.call] = value.value; });
+  value.addEventListener("input", () => { state.questionDrafts[q.call] = value.value; serverPanel?.render(); });
   const error = el("p", { class: "question-error", role: "alert" });
   const submit = async () => {
     if (!value.value.trim()) { value.focus(); return; }
@@ -313,7 +315,7 @@ function question(q) {
     const r = await answer(`${q.call} == ${literal}`);
     button.disabled = false;
     if (r && r.status !== "ok") { error.textContent = r.message; value.focus(); }
-    else { delete state.questionDrafts[q.call]; $("output").focus(); }
+    else { delete state.questionDrafts[q.call]; serverPanel?.render(); $("output").focus(); }
   };
   const button = el("button", { type: "button", onclick: submit }, q.hasProposal ? "Confirm example" : "Save example");
   value.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); submit(); } });
@@ -426,10 +428,10 @@ function editRow(f, values, replace) {
     if (r.status !== "error") { state.editing = null; renderFunctions(); focusRow(f.qualified, "tr.newrow"); }
   };
   for (const input of inputs) {
-    input.addEventListener("input", () => { state.drafts[draftKey] = typed(); });
+    input.addEventListener("input", () => { state.drafts[draftKey] = typed(); serverPanel?.render(); });
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); save(); }
-      if (e.key === "Escape") { delete state.drafts[draftKey]; state.editing = null; renderFunctions(); }
+      if (e.key === "Escape") { delete state.drafts[draftKey]; state.editing = null; renderFunctions(); serverPanel?.render(); }
     });
     input.addEventListener("paste", (e) => {
       const text = e.clipboardData?.getData("text/plain") || "";
@@ -463,6 +465,7 @@ function tableResult(fn, r, draftKey) {
     state.note = { fn, kind: r.lines?.length ? "warn" : "ok", text: r.message, lines: (r.lines || []).map((l) => l.text) };
   }
   renderFunctions();
+  serverPanel?.render();
 }
 
 function focusRow(fn, which) {
@@ -675,6 +678,7 @@ function addFile() {
 let loadTimer = 0;
 function edited() {
   state.files[state.active] = editor.get();
+  serverPanel?.render();
   renderResult();
   $("test-stale").hidden = !state.testKey || state.testKey === view.projectKey(state.files);
   save();
@@ -682,7 +686,9 @@ function edited() {
   loadTimer = setTimeout(() => call("load"), 300);
 }
 
-function loadProject({ files, call: callText = "", active = "", sample = 0, sampleName }) {
+function loadProject({ files, call: callText = "", active = "", sample = 0, sampleName, serverDraft = false }) {
+  clearTimeout(loadTimer);
+  if (!serverDraft) serverPanel?.detach();
   state.projectID++;
   state.files = { ...files };
   state.active = active in files ? active : Object.keys(files).filter((n) => n.endsWith(".star")).sort()[0] || "";
@@ -1062,6 +1068,12 @@ async function start() {
   }
   // Opening order: a share link, a tour link, a tour in progress, the saved
   // project, and on a first visit, the default sample with an optional guide.
+  if (globalThis.PARK_DRAFT_API) serverPanel = globalThis.ParkDraftPanel.initialize({
+    files: () => state.files,
+    pending: () => Object.entries(state.drafts).some(([row, cells]) => functionFor(row.split("\0")[0]) && cells.some(value => value.trim())) || (state.snapshot?.questions || []).some(q => state.questionDrafts[q.call]?.trim()),
+    workingKey: () => JSON.stringify([view.projectKey(state.files), state.drafts, state.questionDrafts]),
+    replace: files => { endTour(); return loadProject({ files, call: $("call").value, sample: -1, serverDraft: true }); },
+  });
   let project = null;
   try {
     project = await readShared();

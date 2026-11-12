@@ -26,7 +26,9 @@ type DraftWorkspace struct {
 	createdAt    time.Time
 	updatedAt    time.Time
 	createdBy    string
-	version      int          // Incremented on each change
+	head         string
+	versions     map[string]SourceVersion
+	version      int          // Deprecated API compatibility: accepted operation count
 	history      []DraftEntry // Change history
 }
 
@@ -42,17 +44,19 @@ type DraftEntry struct {
 
 // DraftSnapshot is the state of a draft workspace for display/API.
 type DraftSnapshot struct {
-	ID           string       `json:"id"`
-	Name         string       `json:"name"`
-	BaseRevision string       `json:"base_revision"`
-	Revision     string       `json:"revision"`
-	Version      int          `json:"version"`
-	CreatedAt    time.Time    `json:"created_at"`
-	UpdatedAt    time.Time    `json:"updated_at"`
-	CreatedBy    string       `json:"created_by"`
-	Files        Files        `json:"files"`
-	Snapshot     Snapshot     `json:"snapshot"`
-	History      []DraftEntry `json:"history,omitempty"`
+	ID             string       `json:"id"`
+	Name           string       `json:"name"`
+	BaseRevision   string       `json:"base_revision"`
+	Revision       string       `json:"revision"`
+	SourceRevision string       `json:"source_revision"`
+	StateToken     string       `json:"state_token"`
+	Version        int          `json:"version"` // Deprecated: operation count, not source identity
+	CreatedAt      time.Time    `json:"created_at"`
+	UpdatedAt      time.Time    `json:"updated_at"`
+	CreatedBy      string       `json:"created_by"`
+	Files          Files        `json:"files"`
+	Snapshot       Snapshot     `json:"snapshot"`
+	History        []DraftEntry `json:"history,omitempty"`
 }
 
 // NewDraftWorkspace creates a new draft workspace from production files.
@@ -89,15 +93,38 @@ func NewDraftWorkspace(id, name, createdBy string, prodFiles Files) (*DraftWorks
 		return nil, fmt.Errorf("initial publish failed: %w", err)
 	}
 	dw.files = next
+	initial := newSourceVersion("", p.Revision, dw.files)
+	dw.head, dw.baseRevision = initial.ID, initial.ID
+	dw.versions = map[string]SourceVersion{initial.ID: initial}
 
 	return dw, nil
 }
 
 // Fork creates a new draft workspace from this draft's current state.
 func (dw *DraftWorkspace) Fork(newID, newName, author string) (*DraftWorkspace, error) {
+	return dw.ForkAt(newID, newName, author, "")
+}
+
+// ForkAt branches from a retained source version. An empty revision branches
+// from the current working state, including its questions.
+func (dw *DraftWorkspace) ForkAt(newID, newName, author, revision string) (*DraftWorkspace, error) {
 	dw.mu.RLock()
 	files := clone(dw.files)
 	baseRev := dw.baseRevision
+	head := dw.head
+	if revision != "" {
+		v, ok := dw.versions[revision]
+		if !ok {
+			dw.mu.RUnlock()
+			return nil, fmt.Errorf("source version not found")
+		}
+		files, head = clone(v.Files), v.ID
+	}
+	versions := map[string]SourceVersion{}
+	// Copy only the selected ancestry, not abandoned branches.
+	for id := head; id != ""; id = dw.versions[id].Parent {
+		versions[id] = copyVersion(dw.versions[id])
+	}
 	dw.mu.RUnlock()
 
 	dw2, err := NewDraftWorkspace(newID, newName, author, files)
@@ -107,6 +134,7 @@ func (dw *DraftWorkspace) Fork(newID, newName, author string) (*DraftWorkspace, 
 	// Preserve the original base revision
 	dw2.mu.Lock()
 	dw2.baseRevision = baseRev
+	dw2.head, dw2.versions = head, versions
 	dw2.mu.Unlock()
 	return dw2, nil
 }
@@ -124,7 +152,7 @@ func (dw *DraftWorkspace) snapshotLocked(includeHistory bool) DraftSnapshot {
 		snap = Snapshot{Error: err.Error()}
 	}
 	out := DraftSnapshot{ID: dw.id, Name: dw.name, BaseRevision: dw.baseRevision,
-		Revision: snap.Revision, Version: dw.version, CreatedAt: dw.createdAt,
+		Revision: dw.head, SourceRevision: snap.Revision, StateToken: dw.stateTokenLocked(), Version: dw.version, CreatedAt: dw.createdAt,
 		UpdatedAt: dw.updatedAt, CreatedBy: dw.createdBy, Files: clone(dw.files), Snapshot: snap}
 	if includeHistory {
 		out.History = append([]DraftEntry{}, dw.history...)
@@ -136,7 +164,7 @@ func (dw *DraftWorkspace) snapshotLocked(includeHistory bool) DraftSnapshot {
 }
 
 // ErrDraftConflict means another accepted operation advanced this draft.
-var ErrDraftConflict = errors.New("draft version conflict")
+var ErrDraftConflict = errors.New("draft state conflict")
 
 // DraftOperation is one atomic operation. Files and Delete affect source modules;
 // queue changes are produced by run/test/example operations, not edited directly.
@@ -152,11 +180,24 @@ type DraftOperation struct {
 
 // Apply checks the expected operation version and runs against that exact state.
 // The lock spans evaluation and commit so stale evaluations cannot replace edits.
+// Deprecated: use ApplyState with the snapshot's opaque StateToken.
 func (dw *DraftWorkspace) Apply(ctx context.Context, author string, expectedVersion int, op DraftOperation) (Result, DraftSnapshot, error) {
-	return dw.apply(ctx, author, &expectedVersion, op)
+	return dw.applyExpected(ctx, author, &expectedVersion, "", op)
+}
+
+// ApplyState checks an opaque hash token, including non-source working state.
+func (dw *DraftWorkspace) ApplyState(ctx context.Context, author, expectedState string, op DraftOperation) (Result, DraftSnapshot, error) {
+	if expectedState == "" {
+		return Result{}, dw.GetSnapshot(false), fmt.Errorf("expected_state is required")
+	}
+	return dw.applyExpected(ctx, author, nil, expectedState, op)
 }
 
 func (dw *DraftWorkspace) apply(ctx context.Context, author string, expected *int, op DraftOperation) (Result, DraftSnapshot, error) {
+	return dw.applyExpected(ctx, author, expected, "", op)
+}
+
+func (dw *DraftWorkspace) applyExpected(ctx context.Context, author string, expected *int, token string, op DraftOperation) (Result, DraftSnapshot, error) {
 	dw.mu.Lock()
 	defer dw.mu.Unlock()
 	if strings.TrimSpace(author) == "" {
@@ -164,6 +205,9 @@ func (dw *DraftWorkspace) apply(ctx context.Context, author string, expected *in
 	}
 	if expected != nil && *expected != dw.version {
 		return Result{}, dw.snapshotLocked(false), fmt.Errorf("%w: expected %d, current %d", ErrDraftConflict, *expected, dw.version)
+	}
+	if token != "" && token != dw.stateTokenLocked() {
+		return Result{}, dw.snapshotLocked(false), fmt.Errorf("%w: working state changed; fetch and review the latest draft", ErrDraftConflict)
 	}
 	var result Result
 	var message string
@@ -210,10 +254,14 @@ func (dw *DraftWorkspace) apply(ctx context.Context, author string, expected *in
 	}
 	changed := changedFiles(dw.files, result.Files)
 	dw.files = clone(result.Files)
+	if dw.versions[dw.head].SourceRevision != result.Snapshot.Revision {
+		v := newSourceVersion(dw.head, result.Snapshot.Revision, dw.files)
+		dw.versions[v.ID], dw.head = v, v.ID
+	}
 	dw.version++
 	dw.updatedAt = time.Now().UTC()
 	dw.history = append(dw.history, DraftEntry{Version: dw.version, Timestamp: dw.updatedAt,
-		Author: author, Message: message, FilesChanged: changed, Revision: result.Snapshot.Revision})
+		Author: author, Message: message, FilesChanged: changed, Revision: dw.head})
 	result.Files = clone(dw.files)
 	return result, dw.snapshotLocked(true), nil
 }
@@ -269,6 +317,7 @@ func (dw *DraftWorkspace) Diff(prodFiles Files) (DraftDiff, error) {
 	dw.mu.RLock()
 	files := clone(dw.files)
 	version := dw.version
+	head := dw.head
 	dw.mu.RUnlock()
 	base, err := load(prodFiles)
 	if err != nil {
@@ -278,7 +327,8 @@ func (dw *DraftWorkspace) Diff(prodFiles Files) (DraftDiff, error) {
 	if err != nil {
 		return DraftDiff{}, err
 	}
-	diff := DraftDiff{BaseRevision: base.Revision, DraftRevision: draft.Revision, DraftVersion: version,
+	baseVersion := newSourceVersion("", base.Revision, prodFiles)
+	diff := DraftDiff{BaseRevision: baseVersion.ID, DraftRevision: head, DraftVersion: version,
 		FilesChanged: []string{}, FilesDeleted: []string{}}
 	for name, text := range files {
 		if !strings.HasSuffix(name, ".star") {
@@ -410,6 +460,10 @@ func (dm *DraftManager) Get(id string) (*DraftWorkspace, bool) {
 
 // Fork registers an independent copy while preserving the original base revision.
 func (dm *DraftManager) Fork(from, id, name, author string) (*DraftWorkspace, error) {
+	return dm.ForkAt(from, id, name, author, "")
+}
+
+func (dm *DraftManager) ForkAt(from, id, name, author, revision string) (*DraftWorkspace, error) {
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 	if _, exists := dm.drafts[id]; exists {
@@ -419,7 +473,7 @@ func (dm *DraftManager) Fork(from, id, name, author string) (*DraftWorkspace, er
 	if !ok {
 		return nil, fmt.Errorf("draft %s does not exist", from)
 	}
-	draft, err := parent.Fork(id, name, author)
+	draft, err := parent.ForkAt(id, name, author, revision)
 	if err != nil {
 		return nil, err
 	}
