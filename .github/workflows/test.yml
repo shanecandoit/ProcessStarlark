@@ -16,11 +16,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: web/.tools/package-lock.json
       - name: Test server and documented flows without CGo
         run: CGO_ENABLED=0 go test ./...
       - run: go vet ./...
       - name: Check concurrent database and workspace operations
         run: go test -race ./internal/draftstore ./internal/server ./internal/workspace
-      - run: node --test web/*.test.js
-      - name: Build WASM and replay guided tours
+      - name: Lint, test, build, and verify the playground
         run: sh web/build.sh

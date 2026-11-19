@@ -29,8 +29,15 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/.tools/package-lock.json
 
       - run: go test ./...
+      - name: Lint, test, build, and verify the playground before publishing
+        run: sh web/build.sh
 
       - uses: goreleaser/goreleaser-action@v6
         with:
@@ -42,7 +49,6 @@ jobs:
 
       - name: Attach the playground
         run: |
-          sh web/build.sh
           (cd web/dist && zip -qr "$RUNNER_TEMP/park-playground.zip" .)
           gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/park-playground.zip"
         env:

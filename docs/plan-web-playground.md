@@ -11,8 +11,12 @@ Run it locally from the repository root:
 sh serve.sh        # web/build.sh, then a static server on http://localhost:8000
 ```
 
-`web/build.sh` alone writes `web/dist/`; any static server can host that
-folder.
+`sh build.sh` checks Go and the playground. `sh web/build.sh` runs only the
+playground pipeline and writes `web/dist/`; any static server can host that
+folder. Both require Node.js 22.13+ (22.x) or 24+ and npm in addition to Go.
+They install the locked development dependencies, lint JavaScript, run frontend
+tests, build WASM and bundles, replay tours, and verify the actual WASM bridge.
+See the [build instructions](../README.md#build-and-check-the-project).
 
 ## Goal
 
@@ -201,9 +205,16 @@ as belonging to the previous input. Check results have their own staleness
 notice. Source files typed while an engine operation runs are preserved; a
 result from a previous project cannot replace the currently selected project.
 
-Frontend model checks run with `node --test web/*.test.js` (Node is
-only needed for these developer checks). `go test ./...` checks the structured
-bridge, sample projects, and all tour replays. Build with `sh web/build.sh`.
+`sh web/build.sh` installs locked npm tools, runs ESLint and JavaScript tests,
+builds the static site and WASM, and verifies local asset references, generated
+JavaScript syntax, actual WASM startup, all sample projects, and the shipping
+answer/save/rerun flow. Tour generation replays all guided steps through the Go
+engine. CI and release packaging use this same pipeline. After dependencies
+are installed, run `npm --prefix web/.tools run lint` or `npm --prefix web/.tools test` for
+focused checks, and `npm --prefix web/.tools run verify-build` to recheck `web/dist`.
+Go tests cover the structured bridge, projects, and tour goals too.
+HTML/CSS lint and visual/browser interaction checks are separate from this
+JavaScript and engine validation.
 Browser verification should include the full missing-answer/reuse flow,
 exact-example shortcuts, editing from a visual step, stale navigation,
 independent check results, preference persistence, and a narrow viewport.

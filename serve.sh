@@ -1,5 +1,6 @@
+#!/bin/sh
+set -eu
+cd "$(dirname "$0")"
 
-set -e
-
-web/build.sh
+sh web/build.sh
 python3 -m http.server -d web/dist 8000

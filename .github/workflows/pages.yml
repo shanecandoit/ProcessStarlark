@@ -25,8 +25,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/.tools/package-lock.json
       - run: go test ./...
-      - run: node --test web/*.test.js
       - run: sh web/build.sh
       - uses: actions/upload-pages-artifact@v3
         with:

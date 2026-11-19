@@ -3,7 +3,6 @@
 // and a snapshot of the project. See docs/plan-web-playground.md.
 "use strict";
 
-const QUESTIONS = "questions.txt";
 const STORAGE_KEY = "park-playground-v1";
 const SHARE_PREFIX = "#p=";
 const TOUR_KEY = "park-tour-v1";   // a tour in progress, kept apart from the reader's own project

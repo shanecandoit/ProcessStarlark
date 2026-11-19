@@ -169,6 +169,37 @@ in the sample picker and in `fixtures/roman/`; use `--root fixtures/roman`
 before the CLI command to try them. Saved browser projects and tour progress
 still take precedence over the first-visit default.
 
+## Build and check the project
+
+Install Go from `go.mod` and Node.js 22.13+ (22.x) or 24+, including npm, then run:
+
+```sh
+sh build.sh
+```
+
+This formats Go, runs Go tests/vet and native builds, then installs the pinned
+JavaScript development tools, runs ESLint and JavaScript tests, builds WASM,
+bundles the site, replays guided tours, and checks the compiled playground.
+The final smoke check starts the actual WASM bridge, loads/checks all bundled
+samples, and exercises answering a shipping question and rerunning its quote.
+Success leaves `web/dist/` ready for a static server:
+
+```sh
+python3 -m http.server -d web/dist 8000
+```
+
+`sh web/build.sh` runs the same playground checks/build without repeating the
+native Go checks. Both build scripts work when invoked from another directory.
+The first build needs npm registry access; `npm ci` installs exactly the lockfile
+without dependency lifecycle scripts. Lint tools stay in `web/.tools` (outside
+Go's package scan) and out of the shipped site.
+For faster iteration after installing dependencies, use `npm --prefix web/.tools run lint`
+and `npm --prefix web/.tools test`. ESLint uses its
+[recommended JavaScript rules](https://eslint.org/docs/latest/use/getting-started#configuration),
+with explicit browser, worker, and Node environments. HTML and CSS are not linted;
+the smoke check verifies local asset references and the engine, while visual
+layout and browser interactions still need a browser check.
+
 ## Try an isolated draft
 
 The local SaaS prototype lets you edit an isolated copy of the shipping
