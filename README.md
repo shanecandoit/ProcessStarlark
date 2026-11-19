@@ -182,8 +182,12 @@ go run ./cmd/park-drafts --root examples/shipping --db .park/shipping.sqlite
 In another terminal, run `python3 scripts/draft_walkthrough.py`. Follow the
 [draft guide](docs/saas-usage.md) for the question queue, source formatting,
 restart recovery, and database backup. SQLite is CGo-free, persists drafts and
-activity, and tracks SQL migrations with checksums. Hosted accounts and
-production promotion are planned. To use the playground with explicit draft saves and
+activity, and tracks SQL migrations with checksums. Local pinned reviews, release
+activation, and rollback are implemented; hosted accounts remain planned.
+Try the [cache and release guide](docs/cache-releases.md), including
+`python3 scripts/draft_walkthrough.py --workflow release` against a fresh database.
+
+To use the playground with explicit draft saves and
 SHA-256 source versions with parent links:
 
 ```sh
@@ -206,10 +210,13 @@ in the optional draft panel, with dates and local user attribution.
 - [Reference](docs/reference.md): file formats, commands, and the exact rules.
 - [Design decisions](docs/design.md): what was decided and why.
 - [Sample projects](docs/ideas-sample-projs.md): word-number addition, a game,
-  a business tool, and geometry, each runnable from [`examples/`](examples).
+  a business tool, geometry, and cache identity, each runnable from
+  [`examples/`](examples).
 - [Implementation plan](plan.md): the full contract.
 - [SaaS product plan](docs/plan-saas.md): implemented draft foundations and the
-  roadmap for authenticated collaboration and reviewed production releases.
+  roadmap for authenticated collaboration and hosted operations.
+- [Caching and reviewed releases](docs/cache-releases.md): cache identity, pinned
+  checks, local approval/activation, release evaluation, and rollback.
 - [Draft usage guide](docs/saas-usage.md): run the local API and a tested
   shipping walkthrough, review changes, and export your project.
 - [Browser playground](docs/plan-web-playground.md): how the playground is

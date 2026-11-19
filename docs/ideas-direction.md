@@ -1,6 +1,6 @@
 # Idea: where Park goes next
 
-Status: direction notes, 2026-11-06. Nothing here is decided until it moves
+Status: direction notes, updated 2026-11-19. Nothing here is decided until it moves
 into [design.md](design.md) as a numbered decision.
 
 ## Positioning
@@ -45,7 +45,7 @@ first.
 | Hazel (Omar et al.) | Holes, and evaluation around holes | Park's holes are filled with data, then optionally code |
 | FlashFill / programming by example | Functions from examples | Park doesn't infer code; people write it, examples check it |
 | Glamorous Toolkit example methods | Examples as first-class, browsable objects | Examples are the function's authoritative partial definition |
-| Unison | Content-addressed definitions, cached results | Park caches by project revision today; see below |
+| Unison | Content-addressed definitions, cached results | Park caches by function/dependency graph identity; see below |
 | Default logic, rules with exceptions | A general rule plus overriding facts | Park's open question D17 is exactly this |
 | Spreadsheets | Typed-in values beside formulas | Park checks formulas against the typed-in values |
 
@@ -70,7 +70,7 @@ Each node is one dispatched call: the call, its output, and its source
 same tree feeds the playground's "Why this answer" panel.
 
 Settled: `--why` recomputes instead of reading the cache, so there is no
-`cache` kind and every tree is complete. If per-function hashing (#3) lands,
+`cache` kind and every tree is complete. With per-function hashing (#3) implemented,
 caching the tree beside the result would bring cache hits back.
 
 ### 2. Spec versus override (resolving D17)
@@ -89,15 +89,11 @@ happens to agree with (a hint that the override is redundant)?
 
 ### 3. Per-function content hashing (exploring Unison ideas)
 
-**Status: wanted.** Today any edit invalidates the whole cache (D14). Instead,
-hash each function by its normalized body, its examples, and the hashes of the
-functions it calls. Then:
-
-- editing one function invalidates only it and its callers;
-- a cached result is keyed by the hash of what produced it, so reverting an
-  edit makes old results valid again;
-- renaming a parameter or reformatting could be hash-neutral if hashing works
-  on the resolved syntax tree rather than bytes.
+**Status: implemented locally.** Function hashes include parsed syntax, examples,
+resolved helpers/constants, the reachable public-function graph, and runtime
+identity. Format-only edits preserve identity; semantic changes invalidate the
+function and its callers. Recursive groups are supported. Names and parameter
+names remain part of identity. See [cache usage](cache-releases.md).
 
 Further Unison-style directions to look at, roughly in order of ambition:
 
@@ -108,9 +104,8 @@ Further Unison-style directions to look at, roughly in order of ambition:
 - **Cache as a shared, append-only store.** Pure, deterministic, hashed
   results can be shared between machines safely.
 
-Blocker to settle first: calls go through `Process.fn` names resolved at load
-time, and dependencies are whole processes (`Uses`). Hashing per function
-needs per-function dependency edges.
+The engine's resolved per-function dependency edges now drive hashing. Shared
+caches still need tenant isolation, retention, and access control.
 
 ### 4. One interface for unknowns (the "Ask" handler)
 

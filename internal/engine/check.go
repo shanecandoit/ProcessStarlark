@@ -16,17 +16,19 @@ const Timeout = 5 * time.Second
 // CheckLine is one line of a test report. Failed lines are failures; the rest
 // describe example-only records.
 type CheckLine struct {
-	Failed bool
-	Text   string
+	Failed bool   `json:"failed"`
+	Text   string `json:"text"`
 }
 
 // Report is the outcome of checking implementations against their examples.
 type Report struct {
-	Checks, Records, Failures int
-	Lines                     []CheckLine
+	Checks   int         `json:"checks"`
+	Records  int         `json:"records"`
+	Failures int         `json:"failures"`
+	Lines    []CheckLine `json:"lines"`
 	// Questions raised while checking: dependency misses and unconfirmed
 	// answers from dependencies, for the caller to queue.
-	Questions []project.Question
+	Questions []project.Question `json:"questions,omitempty"`
 }
 
 // Summary is the report's last line, as the CLI prints it.

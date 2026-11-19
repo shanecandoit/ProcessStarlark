@@ -1,15 +1,17 @@
 # Sample projects
 
-Four small Park projects for different kinds of users. Each one is a folder in
+Five small Park projects for different kinds of users. Each one is a folder in
 [`examples/`](../examples) that passes `park test`; a test keeps the code on
-this page identical to those files. Each also has a place where
-an unknown input stops Park, and someone answers it once to teach it.
+this page identical to those files. The four domain examples also have a place
+where an unknown input stops Park, and someone answers it once to teach it.
+The cache example demonstrates confirmed computed answers and invalidation.
 
 | Project | For | Shows |
 |---|---|---|
 | [Number-word addition](#number-words-addition) (`examples/word-addition`) | anyone trying Park | vocabulary as examples, composition as code, one new row reused |
 | [Robot on a grid](#game-robot-on-a-grid) (`examples/robot`) | people learning to code | state in, state out; a vocabulary that grows |
 | [Shipping quotes](#business-shipping-quotes) (`examples/shipping`) | operations and the developers they work with | a rule table owned by non-programmers, code owned by developers |
+| [Cache identity](#cache-identity) (`examples/cache`) | developers | computed reuse, constants, private helpers, literal whitespace |
 | [Shapes on a grid](#geometry-shapes-on-a-grid) (`examples/shapes`) | teachers and students | examples as worked answers, checked against code |
 
 To try one, `cd` into its folder, run `park build` to generate `park.html`,
@@ -349,3 +351,30 @@ park test
 
 For a classroom exercise, hand out only the examples and `pass` bodies.
 Students replace each `pass` with code until `park test` passes.
+
+
+## Cache identity
+
+`examples/cache/message.star` is an ordinary module, which permits literal
+constants. The private helper and `PREFIX` both contribute to the public
+function's hash. Two spaces in the prefix are intentional.
+
+```python
+"""A cache example with a literal constant and a private helper."""
+PREFIX = "hello  "
+
+example: greet("Ada") == "hello  Ada"
+example: greet("Lin") == "hello  Lin"
+
+def greet(name):
+    message = _prefix() + name
+    return message
+
+def _prefix():
+    return PREFIX
+```
+
+Run `park run 'Message.greet("Sam")'` twice from that directory to populate
+and reuse the cache. Edit the prefix and expectations to invalidate it.
+See the [cache and release guide](cache-releases.md) for a disposable-project
+walkthrough and the separate shipping review/release example.

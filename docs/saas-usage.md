@@ -6,8 +6,11 @@ rules, and review what changed.
 
 **Available today:** a browser playground and a local draft API with SQLite
 persistence, tracked migrations, source formatting, and a question queue.
-**Planned:** hosted accounts, authenticated shared workspaces, review approvals,
-production promotion, and rollback. No command in this guide deploys a change.
+Checked reviews, local release activation, production evaluation, and rollback
+are available through the [cache and release guide](cache-releases.md).
+**Planned:** hosted accounts and authenticated shared workspaces. This draft
+walkthrough changes draft source only; the separate release walkthrough
+explicitly activates and rolls back local releases.
 
 ## Choose your starting point
 
@@ -337,14 +340,11 @@ the head in `X-Park-Source-Version`.
 Diffs list source files and affected functions in sorted order, with full
 hashes. Replacing an answer counts as one removed and one added example.
 A caller can have a different function hash without a changed body because its
-callee changed. These experimental per-function hashes are separate from the
-exact whole-project source versions. Review source and check outcomes.
-The identity hardening needed for production is described in the
-[product plan](plan-saas.md#version-identity-hardening-before-release-storage-or-shared-caches).
-
-There is no **Promote** or **Approve** endpoint yet. Export and review are the
-end of today's workflow. A future reviewer will approve a pinned revision and
-its matching check report; a later edit will require renewed review.
+callee changed. These per-function hashes are separate from exact
+whole-project source versions. They use parsed syntax, runtime identity, and
+the engine's resolved dependency graph. Review full source and check outcomes;
+see [caching and releases](cache-releases.md) to request a pinned review, approve
+and activate it, evaluate the active release, or roll back.
 
 ## Recover from common problems
 
@@ -380,10 +380,11 @@ The guide replay, stale-write races, snapshot isolation, question retention,
 failed validation, diff replacements/deletions, and fork/export behavior are
 automated. The HTTP command permits only loopback IPs; it is not a public
 hosted service. SQLite persistence and consistent backup/restore are implemented. Tenant
-access control, production release manifests, billing, and service-level
+access control, hosted operations, billing, and service-level
 guarantees remain future milestones. CI runs the documented HTTP flow on both
 backends, source literal-preservation tests, migration upgrades/checksums/rollback,
-independent database writers, and question dismissal/reopening flows.
+independent database writers, question dismissal/reopening, and the release
+walkthrough with stale approvals, activation, provenance, and rollback.
 
 For inspecting a filesystem project today, use `park version list` and
 `park run --why`. `park version diff` is currently a placeholder. `--why`

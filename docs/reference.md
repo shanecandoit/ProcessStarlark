@@ -20,15 +20,16 @@ in the [implementation plan](../plan.md).
   as an example in the question queue, and never cached. Readiness is about
   authoring, not verification; use `park test` to check code against examples.
 - **Cache:** the CLI stores computed results in `.cache/`. It's disposable and
-  is invalidated whenever any source file or the runtime changes. The browser
-  playground doesn't cache.
+  uses per-function hashes of parsed syntax, examples, resolved dependencies,
+  and runtime identity. Unrelated edits preserve cached results. The browser
+  playground and local API do not cache. See [caching and releases](cache-releases.md).
 
 ## How a call is resolved
 
 For each call, the runtime:
 
 1. Returns the example's answer if the call matches an example.
-2. Otherwise checks the cache (`.cache/`) for the current project revision.
+2. Otherwise checks the cache (`.cache/`) for the current function hash and named inputs.
 3. Otherwise executes the implementation, if there is one. If the function is
    ready, a successful output is cached. If not, the output is unconfirmed: it
    is returned, proposed in the question queue, and not cached, and neither is
@@ -355,7 +356,8 @@ and counts activity, not source versions. SQLite preserves source history, state
 dates across restart. Startup checks/applies embedded SQL migrations and records
 checksums in `schema_migrations`. `--backup NEW_FILE` creates a consistent
 standalone database and exits; it never overwrites an existing destination.
-ZIP exports do not preserve the version graph. No route promotes production.
+ZIP exports do not preserve the version graph. Local review, approval/activation,
+release evaluation, and rollback endpoints are documented in [Caching and reviewed releases](cache-releases.md).
 
 `GET /api/v1/drafts/{id}/questions` lists open queue items; `?status=all` includes
 resolved/dismissed items. Use `add-example` to answer and `dismiss` with a call

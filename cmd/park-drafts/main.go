@@ -92,7 +92,7 @@ func run() error {
 		defer cancel()
 		_ = srv.Shutdown(shutdown)
 	}()
-	fmt.Printf("Local draft API: http://%s\nReference project: %s\nStorage: %s\nAccounts and production promotion are not implemented.\n", listener.Addr(), *root, storage)
+	fmt.Printf("Local draft API: http://%s\nReference project: %s\nStorage: %s\nLocal review, release activation, and rollback APIs are available. Actor labels are not authenticated accounts.\n", listener.Addr(), *root, storage)
 	if err := srv.Serve(listener); err != http.ErrServerClosed {
 		return err
 	}

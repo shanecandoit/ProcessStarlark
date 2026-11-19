@@ -174,12 +174,17 @@ Named arguments use `=` (not `:`), as in Python.
 No filesystem, network, clock, environment, or randomness. Step, size, and
 time limits. Results are safe to cache.
 
-### D14. Disposable, revisioned cache
-**Implemented** · v1
+### D14. Disposable, content-addressed cache
+**Implemented** · updated 2026-11-19
 
-Computed results are cached under a project-wide revision: a hash of all
-sources and the codec/engine version. Any edit invalidates the whole cache,
-which is always safe to delete. There is no per-function versioning yet.
+Computed results are keyed by function identity and canonical named inputs.
+Identity hashes parsed syntax, authored examples, resolved helpers/constants,
+and the reachable public-function graph, including runtime/hash-schema identity.
+Nested syntax preserves block structure and literal whitespace; formatting and
+comments do not affect identity. A sorted reachable graph supports recursive
+groups. Names/signatures remain part of identity. Unrelated functions do not
+invalidate one another; namespace values conservatively include every member.
+The cache is always safe to delete. See [usage](cache-releases.md).
 
 The cache sits behind the engine's `Cache` interface. The CLI uses the disk
 cache in `.cache/`; projects loaded from memory (the browser playground) run
@@ -403,7 +408,20 @@ edits (D21). The whole file must read cleanly before anything is written.
   declared function (with or without a body), and Park reports an error
   otherwise; declaring one is a one-line `def f(x): pass`. Should examples be
   allowed to name functions that don't exist yet?
-- **Per-function versions.** Version functions by a hash of their bodies, so
-  that editing one function doesn't invalidate every cached result? Explored
-  as Unison-style content hashing in
-  [Direction](ideas-direction.md#3-per-function-content-hashing-exploring-unison-ideas).
+Per-function versions are implemented (D14). Shared caches, tenant scoping,
+and hash-neutral renames remain separate design questions.
+
+
+### D23. Pinned local reviews and whole-project releases
+**Implemented** · 2026-11-19
+
+A review pins source ancestry, exact files, runtime identity, resolved function
+hashes, diff, and fresh whole-project checks. Approval requires a different
+local actor label and atomically creates an immutable release while advancing
+one production generation. Source edits, runtime changes, or a competing
+activation invalidate approval. Operational draft activity alone does not.
+Rollback uses the same generation guard and selects a complete retained release.
+Production calls capture a release before evaluation and never edit draft
+questions. SQLite and memory serialize decisions with source writes; evaluation
+runs after the transaction ends. Local actor labels are attribution only;
+authenticated tenant/project roles remain future work. [Usage](cache-releases.md).

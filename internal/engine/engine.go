@@ -76,6 +76,7 @@ type Engine struct {
 	Project        *project.Project
 	Cache          Cache             // Nil disables caching.
 	FunctionHashes map[string]string // qualified name -> content hash
+	versions       map[string]*FunctionVersion
 	// Resolvers answer, in order, calls with no example and no code. Their
 	// answers are proposals. Empty means such calls are unresolved.
 	Resolvers  []Resolver
@@ -101,18 +102,19 @@ func New(p *project.Project) (*Engine, error) {
 	if p.Root != "" {
 		e.Cache = DirCache{Root: p.Root}
 	}
-	// Compute function hashes for content-addressed caching
-	versions, err := ComputeAllFunctionHashes(p)
-	if err != nil {
-		return nil, err
-	}
-	for qualified, v := range versions {
-		e.FunctionHashes[qualified] = v.Hash
-	}
 	for _, name := range project.Names(p.Processes) {
 		if err := e.load(name); err != nil {
 			return nil, err
 		}
+	}
+	// Resolve bindings before hashing: versions use the runtime's dependency graph.
+	versions, err := e.computeFunctionVersions()
+	if err != nil {
+		return nil, err
+	}
+	e.versions = versions
+	for name, v := range versions {
+		e.FunctionHashes[name] = v.Hash
 	}
 	return e, nil
 }

@@ -1,5 +1,5 @@
 // Package server exposes a local, single-project draft API with memory or
-// SQLite storage. Authentication and production releases are separate milestones.
+// SQLite storage, pinned reviews, and local releases. Authentication is separate.
 package server
 
 import (
@@ -63,6 +63,7 @@ func NewStoredDraftHandler(store DraftStore) (http.Handler, error) {
 	}
 	api := &draftAPI{base: loaded.Files, store: store}
 	mux := http.NewServeMux()
+	api.releaseRoutes(mux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "storage": store.Kind()})
 	})
@@ -286,6 +287,16 @@ func (api *draftAPI) questions(w http.ResponseWriter, r *http.Request) {
 func writeStoreError(w http.ResponseWriter, err error) {
 	status := http.StatusInternalServerError
 	switch {
+	case errors.Is(err, workspace.ErrReleaseChecks):
+		status = 422
+	case errors.Is(err, workspace.ErrReleaseConflict):
+		status = 409
+	case errors.Is(err, workspace.ErrReleaseNotFound):
+		status = 404
+	case errors.Is(err, workspace.ErrReleaseInput):
+		status = 400
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		status = 408
 	case errors.Is(err, workspace.ErrDraftNotFound):
 		status = 404
 	case errors.Is(err, workspace.ErrDraftExists), errors.Is(err, workspace.ErrDraftLimit):

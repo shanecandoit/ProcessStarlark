@@ -1,0 +1,317 @@
+{
+  "title": "Review, release, evaluate and roll back shipping rules",
+  "reference": "examples/shipping",
+  "steps": [
+    {
+      "title": "Start with no active release",
+      "method": "GET",
+      "path": "/api/v1/production",
+      "expect": {
+        "status": 200,
+        "json": {
+          "/production/generation": 0,
+          "/production/release_id": ""
+        }
+      }
+    },
+    {
+      "title": "Production requires an approved release",
+      "method": "POST",
+      "path": "/api/v1/production/run",
+      "expect": {
+        "status": 404,
+        "json": {}
+      },
+      "body": {
+        "call": "Shipping.quote(\"US\", 500)"
+      }
+    },
+    {
+      "title": "Create a shipping draft",
+      "method": "POST",
+      "path": "/api/v1/drafts",
+      "expect": {
+        "status": 201,
+        "json": {}
+      },
+      "body": {
+        "id": "{draft}",
+        "name": "Shipping release walkthrough",
+        "author": "ops"
+      },
+      "capture": {
+        "state": "/draft/state_token",
+        "head": "/draft/revision"
+      }
+    },
+    {
+      "title": "Request pinned checks and review of the baseline",
+      "method": "POST",
+      "path": "/api/v1/drafts/{draft}/reviews",
+      "expect": {
+        "status": 201,
+        "json": {
+          "/review/status": "pending",
+          "/review/checks/failures": 0,
+          "/review/checks/checks": 3,
+          "/review/revision": "{head}"
+        }
+      },
+      "body": {
+        "author": "developer",
+        "expected_state": "{state}",
+        "expected_generation": 0
+      },
+      "capture": {
+        "baseline_review": "/review/id"
+      }
+    },
+    {
+      "title": "Inspect the exact reviewed source and check report",
+      "method": "GET",
+      "path": "/api/v1/reviews/{baseline_review}",
+      "expect": {
+        "status": 200,
+        "json": {
+          "/review/revision": "{head}",
+          "/review/base_generation": 0,
+          "/review/checks/records": 4
+        }
+      }
+    },
+    {
+      "title": "Requester cannot approve their own review",
+      "method": "POST",
+      "path": "/api/v1/reviews/{baseline_review}/approve",
+      "expect": {
+        "status": 400,
+        "json": {}
+      },
+      "body": {
+        "author": "developer",
+        "expected_generation": 0
+      }
+    },
+    {
+      "title": "Approve and activate the baseline atomically",
+      "method": "POST",
+      "path": "/api/v1/reviews/{baseline_review}/approve",
+      "expect": {
+        "status": 200,
+        "json": {
+          "/review/status": "approved",
+          "/production/generation": 1
+        }
+      },
+      "body": {
+        "author": "reviewer",
+        "expected_generation": 0
+      },
+      "capture": {
+        "baseline_release": "/release/id"
+      }
+    },
+    {
+      "title": "Evaluate a released rule with release provenance",
+      "method": "POST",
+      "path": "/api/v1/production/run",
+      "expect": {
+        "status": 200,
+        "json": {
+          "/run/status": "ok",
+          "/run/output": "599",
+          "/run/release_id": "{baseline_release}",
+          "/run/generation": 1
+        }
+      },
+      "body": {
+        "call": "Shipping.quote(\"US\", 500)"
+      }
+    },
+    {
+      "title": "Add Germany only to the draft",
+      "method": "POST",
+      "path": "/api/v1/drafts/{draft}/operations",
+      "expect": {
+        "status": 200,
+        "json": {
+          "/result/status": "ok"
+        }
+      },
+      "body": {
+        "author": "ops",
+        "expected_state": "{state}",
+        "operation": {
+          "kind": "add-example",
+          "example": "Zones.zone(\"DE\") == \"international\""
+        }
+      },
+      "capture": {
+        "state": "/draft/state_token",
+        "head": "/draft/revision"
+      }
+    },
+    {
+      "title": "Draft changes do not alter the active release",
+      "method": "POST",
+      "path": "/api/v1/production/run",
+      "expect": {
+        "status": 200,
+        "json": {
+          "/run/status": "unresolved",
+          "/run/release_id": "{baseline_release}"
+        }
+      },
+      "body": {
+        "call": "Shipping.quote(\"DE\", 800)"
+      }
+    },
+    {
+      "title": "Request review of the Germany change",
+      "method": "POST",
+      "path": "/api/v1/drafts/{draft}/reviews",
+      "expect": {
+        "status": 201,
+        "json": {
+          "/review/diff/files_changed": [
+            "zones.star"
+          ],
+          "/review/diff/function_changes/0/qualified": "Shipping.quote",
+          "/review/checks/failures": 0
+        }
+      },
+      "body": {
+        "author": "developer",
+        "expected_state": "{state}",
+        "expected_generation": 1
+      },
+      "capture": {
+        "review": "/review/id"
+      }
+    },
+    {
+      "title": "Approve the checked Germany snapshot",
+      "method": "POST",
+      "path": "/api/v1/reviews/{review}/approve",
+      "expect": {
+        "status": 200,
+        "json": {
+          "/production/generation": 2
+        }
+      },
+      "body": {
+        "author": "reviewer",
+        "expected_generation": 1
+      },
+      "capture": {
+        "release": "/release/id"
+      }
+    },
+    {
+      "title": "Use the newly released answer",
+      "method": "POST",
+      "path": "/api/v1/production/run",
+      "expect": {
+        "status": 200,
+        "json": {
+          "/run/status": "ok",
+          "/run/output": "2799",
+          "/run/release_id": "{release}",
+          "/run/revision": "{head}"
+        }
+      },
+      "body": {
+        "call": "Shipping.quote(\"DE\", 800)"
+      }
+    },
+    {
+      "title": "A stale rollback cannot overwrite production",
+      "method": "POST",
+      "path": "/api/v1/production/rollback",
+      "expect": {
+        "status": 409,
+        "json": {}
+      },
+      "body": {
+        "author": "operator",
+        "expected_generation": 1,
+        "release_id": "{baseline_release}",
+        "reason": "Demonstrate recovery"
+      }
+    },
+    {
+      "title": "Roll back by switching the complete release",
+      "method": "POST",
+      "path": "/api/v1/production/rollback",
+      "expect": {
+        "status": 200,
+        "json": {
+          "/production/generation": 3,
+          "/production/release_id": "{baseline_release}"
+        }
+      },
+      "body": {
+        "author": "operator",
+        "expected_generation": 2,
+        "release_id": "{baseline_release}",
+        "reason": "Demonstrate recovery"
+      }
+    },
+    {
+      "title": "Rollback restores baseline behavior",
+      "method": "POST",
+      "path": "/api/v1/production/run",
+      "expect": {
+        "status": 200,
+        "json": {
+          "/run/status": "unresolved",
+          "/run/generation": 3,
+          "/run/release_id": "{baseline_release}"
+        }
+      },
+      "body": {
+        "call": "Shipping.quote(\"DE\", 800)"
+      }
+    },
+    {
+      "title": "The Germany release remains immutable and inspectable",
+      "method": "GET",
+      "path": "/api/v1/releases/{release}",
+      "expect": {
+        "status": 200,
+        "json": {
+          "/release/id": "{release}",
+          "/release/revision": "{head}",
+          "/release/reviewer": "reviewer"
+        }
+      }
+    },
+    {
+      "title": "Production questions did not edit the draft",
+      "method": "GET",
+      "path": "/api/v1/drafts/{draft}",
+      "expect": {
+        "status": 200,
+        "json": {
+          "/draft/state_token": "{state}",
+          "/draft/revision": "{head}",
+          "/draft/snapshot/questions": []
+        }
+      }
+    },
+    {
+      "title": "Inspect the activation and rollback history",
+      "method": "GET",
+      "path": "/api/v1/production",
+      "expect": {
+        "status": 200,
+        "json": {
+          "/activations/0/kind": "approve",
+          "/activations/1/kind": "approve",
+          "/activations/2/kind": "rollback",
+          "/activations/2/previous_release": "{release}"
+        }
+      }
+    }
+  ]
+}

@@ -647,9 +647,6 @@ func TestExampleProjects(t *testing.T) {
 	shown := 0
 	for _, block := range strings.Split(doc, "```python\n")[1:] {
 		code := block[:strings.Index(block, "```")]
-		if !strings.HasPrefix(code, "Process ") {
-			continue
-		}
 		shown++
 		found := false
 		for _, contents := range files {

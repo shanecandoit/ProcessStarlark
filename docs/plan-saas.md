@@ -1,9 +1,10 @@
 # Plan: Park as a SaaS product
 
-Status: local draft API with SQLite persistence, tracked migrations, source
-hygiene, and a durable question queue implemented, 2026-11-11. Hosted accounts,
-approvals, production releases, and billing are planned. See the
-[durable draft plan](plan-durable-drafts.md).
+Status: local drafts, hardened function-cache identity, pinned reviews,
+whole-project releases, production evaluation, and rollback implemented,
+2026-11-19. Hosted accounts, authenticated roles, tenant permissions, and billing
+remain planned. Start with the [cache and release usage guide](cache-releases.md)
+and [durable draft guide](saas-usage.md).
 The local service can serve the playground with explicit draft saves and
 immutable source history; the public static playground remains browser-only.
 See the [source version plan](plan-source-versions.md) for this implementation.
@@ -30,7 +31,7 @@ reusable answer, not merely a diagram or a version hash.
 |---|---|---|
 | Pure evaluation, authoritative examples, questions, provenance | Implemented | Engine, CLI, playground, and their tests |
 | Approachable example tables and optional visual explanations | Implemented | Static playground; addition and shipping tours |
-| Function hashes and `park version list` | Implemented, experimental identity scheme | `internal/engine/version.go`; version tests |
+| Function hashes and `park version list` | Implemented; syntax/runtime/resolved dependency identity | `internal/engine/version.go`; version tests |
 | Draft operations, snapshots, history, forking, source/function diff | Implemented; SQLite by default | `internal/workspace/draft.go` and regression tests |
 | Local HTTP draft service | Implemented | `go run ./cmd/park-drafts --root examples/shipping` |
 | Immutable source versions | Implemented; SQLite by default | SHA-256 IDs, complete source snapshots, parent links, historical forks |
@@ -41,7 +42,7 @@ reusable answer, not merely a diagram or a version hash.
 | Basic question queue and local actor IDs/dates | Implemented | List, answer, dismiss, reopen, retain closed items |
 | Safe source formatting and lint | Implemented | Literal-preserving formatter; source-save normalization |
 | Authenticated collaboration | Planned | Required before a hosted pilot |
-| Review, promote, production evaluation, rollback | Planned | No production pointer or promotion command exists |
+| Review, activate, production evaluation, rollback | Implemented locally | Pinned checks, immutable manifests, atomic generation guard, release walkthrough |
 | `park version diff` | Placeholder | Use the implemented draft diff endpoint today |
 
 There is no hosted account service or PostgreSQL/Redis store in this repository.
@@ -122,66 +123,52 @@ gate; an unauthenticated localhost demo does not satisfy it.
 
 ## Milestone 3: reviewed releases
 
-Start with **immutable whole-project releases** and one atomic active-release
-pointer per project. This is easier to reason about than mixing independently
-selected function versions whose dependencies may no longer agree.
+**Implemented locally.** [Use the review/release API](cache-releases.md) to
+request fresh pinned checks, inspect the full source/function diff, approve
+and activate a whole-project release, or reject with a reason. The requester
+cannot approve using the same actor label. Each accepted activation advances
+one production generation. Approval checks the exact draft source head,
+runtime identity, and original production base inside the store transaction.
+A source edit or competing activation requires a new review. Runs/questions do
+not change the pinned source head.
 
-A review request pins the draft version, source revision, full file snapshot,
-base release, diff, and check report. Any source change requires a new review;
-a production-base change requires an explicit rebase or a rejected activation.
-Approval checks and pointer replacement occur in a transaction. Two approvals
-must not race to overwrite the same production generation.
+Every implemented function must be ready and pass all authored cases. Missing
+or unconfirmed dependencies raised by checks block review. Example-only tables
+are valid records. Approved releases retain exact source files, full function
+hashes, checks, runtime, requester/reviewer labels, and dates. Rollback atomically
+selects an existing whole-project release and records the previous pointer,
+actor, reason, and generation. In-flight evaluation uses its captured release.
 
-Promotion gates:
+These are local workflow guarantees. Hosted release gates still need
+authenticated reviewer roles and tenant/project membership. Actor labels do
+not prove identity. Per-function promotion remains outside this implementation;
+a release always selects a complete project. Rollback cannot undo actions an
+external consumer already took based on an earlier answer.
 
-- source validates with the same runtime and limits used by evaluation;
-- every implemented function meets readiness policy and passes its examples;
-- example-only tables remain valid data and do not need two examples or code;
-- unresolved dependencies and unconfirmed check results block activation;
-- the check report belongs to the exact reviewed snapshot and runtime version;
-- the reviewer has the appropriate project role.
+## Version identity and caching
 
-Record the release manifest, authenticated requester/reviewer, checks, and
-previous active release. Rollback activates a prior complete release through
-the same guarded pointer update. Purity helps reproduce evaluation; it does
-not undo actions an external consumer already took based on earlier answers.
+**Implemented.** Exact source versions remain separate from execution identity.
+Function identity now hashes parsed syntax rather than collapsed text, preserving
+literal whitespace and block structure. It uses the engine's resolved dependency
+analysis for helpers, constants, aliases, public functions, and namespace values.
+A sorted reachable graph handles recursive groups without cyclic hash equations.
+Runtime/hash-schema identity and the pinned interpreter version are included.
+Formatting/comments and unrelated functions preserve cached results; dependency
+changes invalidate callers. Direct member references avoid unrelated namespace
+members, while namespace values deliberately include every member.
 
-Per-function promotion can follow after a dependency-closure model is proven.
-It must include required callees and affected callers and cannot rely on
-truncated display hashes. Approvals and notifications are distinct operations;
-webhooks are a later, explicitly configured integration.
-
-Acceptance: draft edits leave live evaluation unchanged, approved activation
-changes the entire project atomically, stale approvals cannot activate, and
-rollback restores the previous complete behavior under concurrent requests.
-
-## Version identity hardening before release storage or shared caches
-
-Whole-project source versions hash exact source bytes and ancestry, including
-helpers, constants, indentation, and literals. The following gaps concern the
-separate experimental **per-function** hash/cache scheme:
-
-- Body normalization currently collapses whitespace textually. It must preserve
-  whitespace inside literals and the semantics of block indentation.
-- Private helpers, module constants, function values, and namespace references
-  must be included through resolved dependencies. Existing engine dependency
-  analysis should drive this instead of a second approximate call graph.
-- Cross-process dependency tracking is currently conservative; minimal cache
-  invalidation is not a guarantee. Recursive groups need an explicit strategy.
-- Runtime/hash-schema versions must be included where different semantics
-  could otherwise reuse the same cache key or stored identity.
-- Tenant-scoped cache keys must prevent cross-tenant value disclosure, even
-  when identical source produces identical hashes. Hashes are not permissions.
-
-Required regression cases include string-literal whitespace changes, moved
-blocks with changed behavior, helper/constant edits, aliases, recursive groups,
-format-only changes, and unrelated function edits. Until this is hardened,
-review full source diffs and do not use function hashes alone as release gates.
-The local draft service evaluates in-memory projects without the disk cache.
+Regression tests cover literal whitespace, indentation, helpers/constants,
+aliases, namespace values, recursive groups, formatting, unrelated edits, actual
+stale disk-cache prevention, and check/cache isolation. Review full source and
+pinned check results rather than display hashes alone. Shared or tenant caches
+are not implemented and will require scoped keys and permissions. Local drafts
+and production API runs evaluate in memory without the CLI's disk cache.
 
 ## Milestone 4: production evaluation and operations
 
-Serve only an active immutable release, authenticated and scoped to its project.
+Implemented locally: serve an active immutable release, returning its release
+ID, runtime, and generation. Hosted evaluation still needs authentication and
+project scope.
 Return the release ID, outcome, and optional provenance. Keep a request pinned
 to one release even if another activates while it runs.
 
@@ -202,7 +189,7 @@ not measured acceptance evidence.
 |---|---|---|---|
 | Rule owner | Answer Germany's missing zone and reuse it | Table-first walkthrough, visible scope of saving | Compact tables, questions, and history |
 | Developer | Check a rule and inspect the affected callers | Code and provenance on demand | Editor, checks, diff, and API reference |
-| Reviewer | Understand a pinned change and its check results | Source/example changes, affected functions, exact revision | Review queue and release history, when implemented |
+| Reviewer | Understand a pinned change and its check results | Source/example changes, affected functions, exact revision | Local review/release API; hosted review UI planned |
 | Operator | Recover a release or diagnose an unresolved input | Runbook with tested commands and recovery steps | Metrics, scoped logs, restore and rollback tools |
 
 The current guide must always distinguish browser-only exploration, the local
@@ -220,12 +207,12 @@ concepts. "Ready" means enough examples under policy, not "checked" or "live."
 
 | Area | Current automated evidence | Remaining gate |
 |---|---|---|
-| Draft edits | Validation, rollback on rejection, true concurrent operations | Durable transactions across processes |
+| Draft edits | Validation, rejection rollback, SQLite transactions across connections | Hosted tenant scope |
 | Snapshots | Copy isolation; SQLite restart recovery and backup restore | Retention and hosted operations |
-| Diff | Sorted output, full hashes, replacements and deleted functions | Hardened identity/dependencies and source diff UI |
+| Diff | Sorted output, resolved full hashes, replacements/deletions, pinned source files | Source diff UI |
 | API | Documented workflow replayed on memory/SQLite with restart per request | Authenticated tenant scope |
 | User guide | Same JSON steps drive Python walkthrough and Go handler tests | Hosted UI walkthrough and user comprehension study |
-| Release | Not implemented | Pinned checks, roles, atomic activation, stale approvals, rollback |
+| Release | Pinned checks, atomic activation, stale approvals, rollback, restart/backup, executable HTTP guide | Authenticated roles and hosted operations |
 
 Run `go test ./...`, `go test -race ./internal/draftstore ./internal/workspace ./internal/server`,
 `node --test web/*.test.js`, and `sh web/build.sh` before merging.
@@ -235,12 +222,11 @@ based only on the presence of a struct or a green example walkthrough.
 
 ## Next implementation sequence
 
-1. Harden per-function cache identity and add the regression cases above.
-   Immutable whole-project source versions and local playground history are built.
-2. SQLite persistence/migrations are built. Add authenticated, scoped workspaces
-   and membership before hosting.
-3. Extend the local playground connection to authenticated durable workspaces
-   and pinned server check reports.
-4. Build pinned review requests and immutable whole-project releases.
-5. Add release-only evaluation and operational recovery, then consider billing
-   and additional integrations after the pilot workflow is demonstrated.
+1. Cache identity, SQLite persistence, local source history, and local reviewed
+   whole-project releases are built; use the linked guides and walkthroughs.
+2. Add authenticated, tenant/project-scoped workspaces and membership before hosting.
+3. Extend the playground to authenticated workspaces and a pinned check/review UI.
+4. Enforce authenticated release roles and retention/operational limits; replace
+   the local single-record release-state storage when scaling requires it.
+5. Add hosted release-only evaluation and operational recovery, then consider
+   billing and integrations after the pilot workflow is demonstrated.

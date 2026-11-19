@@ -1,8 +1,9 @@
 # Plan: durable drafts, source hygiene, and a basic question queue
 
 Status: implemented locally, including automated restart-per-request HTTP
-walkthroughs and pull-request CI. Authentication, tenant membership, and reviewed
-releases remain future work.
+walkthroughs and pull-request CI. Authentication and tenant membership remain
+future work. Pinned local reviews and releases are implemented; see
+[usage](cache-releases.md).
 
 ## Scope and order
 
@@ -54,8 +55,9 @@ records belong to a draft and cannot be fetched through another draft.
 
 Local user IDs identify submitted actor labels; they do not authenticate users.
 The service remains loopback-only. Authentication, membership, tenant scoping,
-pinned server check reports, reviewed releases, and per-function cache hash
-hardening remain later slices. SQLite lives on local disk, not a shared network
+and hosted review permissions remain later slices. Pinned server checks, local
+reviewed releases, and syntax/dependency cache hardening are implemented; see
+[usage](cache-releases.md). SQLite lives on local disk, not a shared network
 filesystem. No automatic destructive down migrations.
 
 Implementation uses [`modernc.org/sqlite`](https://pkg.go.dev/modernc.org/sqlite)

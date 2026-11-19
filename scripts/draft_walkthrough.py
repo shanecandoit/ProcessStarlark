@@ -31,6 +31,7 @@ def request(url, step):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--workflow", choices=["draft", "release"], default="draft", help="release requires a fresh database and activates local releases")
     parser.add_argument("--url", default="http://127.0.0.1:8081")
     parser.add_argument("--draft-id", default="shipping-guide-" + uuid.uuid4().hex[:8])
     parser.add_argument("--export", type=Path, help="save the final project ZIP to this path")
@@ -38,7 +39,7 @@ def main():
     if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}", args.draft_id):
         parser.error("draft id must be 1-64 letters, digits, _ or -")
     args.url = args.url.rstrip("/")
-    fixture = Path(__file__).resolve().parents[1] / "docs/tutorials/draft-workflow.json"
+    fixture = Path(__file__).resolve().parents[1] / f"docs/tutorials/{args.workflow}-workflow.json"
     variables = {"draft": args.draft_id}
     def substitute(value):
         if isinstance(value, str):
@@ -92,6 +93,11 @@ def main():
             if expected.get("reference_unchanged") and value["files"] != reference:
                 raise RuntimeError("The reference project changed")
         print(f"{number:2}. {step['title']} — OK")
+    if args.workflow == "release":
+        print(f"\nDraft: {args.draft_id}. Germany release: {variables['release']}.")
+        print("Two releases activated; rollback restored the baseline at generation 3.")
+        print("The Germany change remains saved in the draft and its immutable release.")
+        return
     print(f"\nDraft: {args.draft_id}. Source version: {variables['head']}. Quote: 2799 cents ($27.99).")
     print("Nothing was promoted.")
     print("SQLite drafts and server questions survive restarts; keep a database backup." if storage == "sqlite" else "Memory mode: drafts disappear when the service stops.")

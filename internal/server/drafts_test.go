@@ -136,8 +136,12 @@ func TestDocumentedDraftWalkthrough(t *testing.T) {
 }
 
 func runDocumentedDraftWalkthrough(t *testing.T, handler http.Handler) {
+	runDocumentedWorkflow(t, handler, "draft-workflow.json")
+}
+
+func runDocumentedWorkflow(t *testing.T, handler http.Handler, filename string) {
 	base := decodeResponse(t, send(handler, "GET", "/api/v1/base", nil))["files"]
-	data, err := os.ReadFile("../../docs/tutorials/draft-workflow.json")
+	data, err := os.ReadFile("../../docs/tutorials/" + filename)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +166,7 @@ func runDocumentedDraftWalkthrough(t *testing.T, handler http.Handler) {
 	variables := map[string]string{}
 	for _, step := range guide.Steps {
 		t.Run(step.Title, func(t *testing.T) {
-			w := send(handler, step.Method, step.Path, substituteGuide(step.Body, variables))
+			w := send(handler, step.Method, substituteGuide(step.Path, variables).(string), substituteGuide(step.Body, variables))
 			if w.Code != step.Expect.Status {
 				t.Fatalf("status %d, want %d: %s", w.Code, step.Expect.Status, w.Body.String())
 			}

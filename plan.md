@@ -19,7 +19,7 @@ defines the implementation contract:
   no sidecar files.
 - Treat all examples as one project-wide set. An example may be written in any
   module and name any declared function.
-- Store computed results in `.cache/` as disposable, revisioned canonical JSON
+- Store computed results in `.cache/` as disposable, content-addressed canonical JSON
   records.
 - A function with an implementation is ready once it has two distinct authored
   examples. Before that its body still runs, but its answers are unconfirmed:
@@ -217,13 +217,16 @@ question is about that innermost call.
    examples always win. Computed evaluations do not count toward the two-example requirement
    and do not appear among the catalog's authored examples.
 5. Cache each successful body evaluation in an immutable JSON file keyed by a
-   hash of the function, canonical input, and an execution revision. Include a
+   hash of the qualified function, canonical input, and function execution identity. Include a
    schema version and provenance in the record. Reject a conflicting output for
    an existing key; never cache failures or unresolved calls.
-6. Use a conservative project-wide execution revision: hash sorted Starlark
-   sources and an engine/codec version. This invalidates old results
-   when code, dependencies, examples, or runtime semantics change. Old revision
-   files may remain unused; cache deletion is always safe.
+6. Use per-function execution identity: hash parsed syntax, examples, runtime/hash
+   schema, and the complete reachable graph from the engine's resolved dependency
+   analysis. Include helpers/constants, aliases, and namespace values; preserve
+   literal whitespace and block structure. A sorted reachable graph supports
+   recursive groups. Format-only and unrelated edits do not invalidate results.
+   Old identity files may remain unused; cache deletion is always safe. See the
+   [cache and release usage guide](docs/cache-releases.md).
 
 Use canonical JSON files rather than SQLite: the authored example set is
 small, indexes can be rebuilt in memory, and no schema migration service is
@@ -235,8 +238,8 @@ For each dispatched call:
 
 1. Bind positional and keyword arguments to the named inputs and validate
    them, then check authored examples.
-2. Check the computed cache for the current execution revision. The cache is
-   the engine's `Cache` interface: the disk cache for projects loaded from a
+2. Check the computed cache for the current function execution identity. The
+   cache is the engine's `Cache` interface: the disk cache for projects loaded from a
    directory, none for projects loaded from memory.
 3. If a body exists, execute it with a step limit and cancellation support and
    validate the result. If the function has two distinct authored examples,
@@ -337,7 +340,7 @@ Extend caching with a bounded sample of each function's runtime calls:
 - Retain the first few successful calls and the most recent few calls. Keep the
   early window fixed and advance the recent window as calls succeed.
 - Store retained calls as canonical JSON input/output records, with function,
-  execution revision, and call order. Store a call shared by both windows once.
+  execution identity, and call order. Store a call shared by both windows once.
 - Include successful authored-example hits, computed-cache hits, and body
   evaluations. These are runtime calls, not authored examples.
 - Keep revision provenance so stale outputs cannot satisfy current lookups. Test

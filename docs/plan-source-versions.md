@@ -1,8 +1,9 @@
 # Plan: immutable source versions and playground drafts
 
-Status, 2026-11-11: source versions, playground drafts, and SQLite durability
-implemented locally. Authenticated collaboration and reviewed releases remain
-planned. See [durable drafts and source hygiene](plan-durable-drafts.md).
+Status, updated 2026-11-19: source versions, playground drafts, and SQLite
+persistence are implemented locally. Authenticated collaboration remains planned.
+Local pinned reviews, checked whole-project releases, and rollback are implemented;
+see [usage](cache-releases.md) and [durable drafts](plan-durable-drafts.md).
 
 ## Model
 
@@ -29,9 +30,9 @@ Clients echo that token; stale tokens return 409 without changing anything.
 The old integer `version` / `expected_version` pair remains a deprecated API
 compatibility counter, never a source identity or a release reference.
 
-These whole-project versions do not depend on the experimental per-function
-hashes. Function cache identity still needs the separate syntax/dependency
-hardening described in [the SaaS plan](plan-saas.md).
+These whole-project versions do not depend on per-function hashes. Function
+cache identity uses the separate parsed syntax and resolved dependency scheme
+in [the cache guide](cache-releases.md).
 
 ## Slices and acceptance
 
@@ -54,8 +55,9 @@ hardening described in [the SaaS plan](plan-saas.md).
    independent writer conflicts, restart, and backup/restore are tested.
    Authentication, tenant scope, membership, and hosted quotas remain required
    before public exposure. Browser recovery is not a database backup.
-4. **Reviewed releases.** Pin whole-project version plus runtime/check report;
-   approve and activate through guarded transactions. Test stale approvals and
+4. **Reviewed releases: implemented locally.** Whole-project source versions and
+   runtime/check reports are pinned; approval/activation use guarded transactions.
+   Tests cover stale approvals and
    rollback. No save or fork in slices 1–2 activates production.
 
 ## Verification and guide
