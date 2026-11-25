@@ -8,8 +8,7 @@ deleting it.
 Status values: **Implemented**, **Agreed** (decided, not built yet),
 **Provisional** (built or planned, but open to change), **Open** (not decided).
 
-Longer explorations live in their own pages, such as
-[ideas-function-values.md](ideas-function-values.md).
+Future product work is tracked in the [roadmap](roadmap.md).
 
 ## Functions
 
@@ -26,8 +25,6 @@ like a table: one column per input, plus the output column.
   nothing.
 - Cost: changing a function's inputs means editing its examples too. Cache
   invalidation handles the rest.
-- See [ideas-function-values.md](ideas-function-values.md) for the options
-  considered.
 
 ### D2. Input names match the `def`, in the same order
 **Implemented** · 2026-11-05
@@ -309,7 +306,7 @@ run. If none answers, the call is unresolved as before (D16).
 - Why: without it, a run stops at the first miss, and a deep call chain takes
   one ask-answer-rerun round per miss. With a resolver the run finishes, and
   every guess shows up together for review. It also keeps models out of the
-  core (see [Direction](ideas-direction.md#left-open-on-purpose-synthesis)).
+  core (see [external proposals](roadmap.md#later-if-a-workflow-needs-it)).
 - Not built yet: any resolver, or a CLI flag to plug one in (for example, an
   external command that reads a call as JSON and writes an answer).
 
@@ -393,7 +390,6 @@ edits (D21). The whole file must read cleanly before anything is written.
 - **Audience - resolved 2026-11-06.** The idea is explained for business
   readers (users who'd write examples, and buyers); the technical docs and CLI
   are for programmers. The aim is a B2B product. See
-  [Direction](ideas-direction.md#positioning) and
   [Park for business teams](for-business.md).
 
 - **Deliberate exceptions - resolved by [D17](#d17-every-example-is-a-strict-implementation-check).**

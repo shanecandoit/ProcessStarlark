@@ -369,13 +369,7 @@ outside literals before hashing. Historical source is unchanged. `format` and
 `lint` operations and the playground's code tools expose formatting and basic
 style diagnostics. Syntax, signature, and example validation still apply.
 
-## Roadmap
+## Future work
 
-- **v2 call samples:** keep each function's first few and most recent few
-  calls as canonical JSON records, to show real usage. These samples are
-  separate from authored examples and never count toward readiness.
-- **Later:** per-function content hashing, overrides that answer calls
-  without checking code (D17), nested processes, and
-  synthesizing implementations from examples. See
-  [Direction](ideas-direction.md) and the
-  open questions in [Design decisions](design.md#open-questions).
+See the [roadmap](roadmap.md) for priorities and proposals, and
+[design decisions](design.md#open-questions) for open language questions.

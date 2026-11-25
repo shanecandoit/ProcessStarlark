@@ -1,117 +1,67 @@
 # Park for business teams
 
-This page is for the people who own business rules (operations, finance,
-pricing, compliance) and for anyone deciding whether Park fits their team. No
-programming background is needed. Programmers should read
-[Why Park?](why-park.md).
+Park is an early tool for rules that combine a table people maintain with code
+that calculates an answer. This page is for rule owners and teams considering
+a trial. Developers can start with [Why Park?](why-park.md).
 
-## The usual way
+## How it works
 
-Someone who knows the rules writes them down: a spec, a ticket, a spreadsheet
-sent by email. A developer reads it, interprets it, and writes code. Then:
+A rule owner writes known answers as **examples**: “a 500 g parcel to the US
+costs $5.99.” A matching request returns that saved answer, even before there
+is code.
 
-- **Cases the document missed get decided by the developer,** usually without
-  anyone noticing.
-- **The document and the system drift apart.** After a few changes, nobody is
-  sure which one is right.
-- **Mistakes surface late,** in testing or with a customer.
-- **Every change to a rule goes back through a developer,** even when it's a
-  single number.
+A developer writes the general rule for cases outside the examples. Explicit
+implementation checks compare the code with the saved answers and report
+disagreements. A normal run returns a matching example directly; it does not
+check the implementation.
 
-## The Park way
-
-The people who know the answers write them down as **examples**: "a 500 g
-parcel to the US costs $5.99". The examples aren't a document *about* the
-system. They are the system's answers, from the day they're written. Ask about
-a case that's listed, and you get that answer.
-
-Developers then write **code** for the general rule. Code answers the cases
-nobody listed. It never overrides a case that is listed. If the code gives a
-different answer for a listed case, Park reports the disagreement.
-
-When a case comes up that nobody listed and no code covers, **Park doesn't
-guess. It asks.** The question goes to the people who own the rule, and their
-answer becomes a new example.
+If neither an example nor code can answer a call, Park records a question.
+A person can supply the missing fact as another example and rerun the request.
+Errors in code are reported separately.
 
 ## A walkthrough: shipping quotes
 
-This is the *Shipping quotes* sample in the
-[browser playground](https://shanecandoit.github.io/ProcessStarlark/). Press **Run** to follow along.
+Try the [shipping tour](https://shanecandoit.github.io/ProcessStarlark/#tour=shipping).
 
-1. **Operations keeps the zone table.** They list which zone each country is
-   in: the US is domestic, Canada and Mexico are North America, France is
-   international. There's no code here, only their answers.
-2. **A developer writes the pricing rule:** a base fee per zone, plus a fee per
-   500 g. Operations' three known quotes (US 500 g, Canada 1200 g, France
-   2500 g) check that the rule is right.
-3. **A customer asks for a quote to Germany.** Germany isn't in the zone table,
-   so Park doesn't make up a zone. It asks: *what zone is Germany?*
-4. **Operations answers "international".** That answer becomes a new row in
-   their table, and the quote comes back: $27.99.
-5. **Anyone can ask why.** Park shows that $27.99 came from the developer's
-   pricing rule, which used operations' entry for Germany, with a link to each.
-
-Nobody filed a ticket, and nobody guessed. The developer didn't need to know
-which zone Germany is in.
+1. Operations maintains a country-to-zone table: the US is domestic, Canada
+   and Mexico are North America, and France is international.
+2. A developer writes a pricing rule: a base fee per zone, plus a fee for each
+   started 500 g. Saved quotes provide cases for checking the implementation.
+3. A request for an 800 g parcel to Germany needs a zone that is missing.
+   Park asks which zone Germany belongs to.
+4. Operations saves “international.” The rule can now calculate $27.99.
+   Other weights can reuse the same zone entry.
+5. The explanation shows the pricing rule and the Germany entry it used.
 
 ## Who does what
 
-| Role | Does | Doesn't need to |
-|---|---|---|
-| Rule owner (business) | Writes examples, answers questions, confirms proposed answers | Write or read code |
-| Developer | Writes code for the general rule, runs the checks | Know every business case up front |
-| Everyone | Reads the same catalog of every function and its examples | Keep a separate spec in sync |
+| Role | Work |
+|---|---|
+| Rule owner | Maintains examples, answers questions, and confirms proposed answers |
+| Developer | Implements general rules and runs implementation checks |
+| Reviewer | Inspects saved changes, checks, and scenario comparisons before activation |
 
-## How Park differs from tools you may already use
+Examples can be wrong or incomplete. Checks show whether code agrees with the
+saved cases; they do not establish that every possible input is correct.
+Changing an answer in a draft does not activate a live release.
 
-| Tool | What it does well | Where Park is different |
-|---|---|---|
-| Specs and tickets | Easy to write | They describe the system. Park's examples *are* the system's answers, so they can't drift. |
-| Spreadsheets | Values and formulas side by side | Nothing checks a formula against the values someone typed in. Park checks the code against every example. |
-| Rules engines and decision tables (DMN, BRMS) | Business-editable rules | You still have to write the rule for every case, in the tool's own language, and unmatched cases fall through to a default. In Park you write cases, developers write the rule, and unmatched cases become questions. |
-| Low-code and no-code builders | Build without developers | They replace developers and stop where the builder's blocks stop. Park keeps developers and changes the handoff. |
-| BDD scenarios (Cucumber, Gherkin) | Business-readable examples | Scenarios are tests run against code. They never answer anything in production, and a missing scenario goes unnoticed. In Park, examples answer, and missing cases are asked about. |
-| AI code generation | Writes code quickly | Someone still has to say what's right. In Park, that's the examples, and generated code is checked against them like any other code. |
+## Scope
 
-## What this gets you
-
-- **Requirements that can't drift,** because they're the system's answers.
-- **No silent guesses.** Gaps become questions addressed to the rule's owner.
-- **Every answer is traceable** to the example someone wrote or the code that
-  computed it, with a link to each.
-- **Business changes without a developer:** changing a listed answer is a
-  one-line edit to an example.
-- **Predictable behaviour.** Rules can't reach databases, networks, or the
-  clock. The same question always gets the same answer, so results are
-  reproducible and easy to audit.
-
-## Good fits
-
-Pricing and fees, eligibility, routing and assignment, classification, code
-and category mappings, thresholds: rules that are partly a table people
-maintain and partly a formula.
-
-It's not a fit for workflows that send emails or update databases, for large
-data processing, or for anything that has to be fast at scale.
+Pricing tables, category mappings, and routing rules are candidate uses to
+try with a team. The shipping sample uses integer cents for money. Rules have
+no database, network, or clock access; applications supply their inputs and
+handle any external actions. Performance at scale has not been measured.
 
 ## Where Park is today
 
-Early. The core works: examples, code, checks, questions, and "why" are all
-real, in a command-line tool and a browser playground. In the playground,
-each function's examples are a table you can type into or paste spreadsheet
-rows into. Underneath, they're saved as text files that developers work
-with directly.
+The CLI and browser playground support examples, code, checks, questions,
+explanations, editable tables, and CSV/TSV import.
 
-The local backend now includes SQLite persistence, isolated drafts, immutable
-source history, question tracking, behavior comparisons, reviews, release
-activation, rollback, and an evaluation API. The playground can connect to it
-for explicit saves and reviews. See the [review guide](playground-review-guide.md).
+The local backend adds SQLite persistence, isolated drafts, source history,
+question tracking, scenario comparisons, reviews, release activation, an
+evaluation API, and rollback. See the [review guide](playground-review-guide.md).
 
-Before a hosted team pilot, Park still needs accounts, tenant/project
-permissions, authenticated reviewer roles, and hosted operations. Local actor
-names are labels, not verified identities. A simpler rule-owner experience and
-sessions with unfamiliar users remain open work; see the
-[study protocol](usability-sessions.md).
-
-If this matches a problem your team has, that's the conversation we want to
-have.
+Accounts, project permissions, authenticated reviewer roles, and hosted
+operations remain planned. Local actor names are labels. The
+[roadmap](roadmap.md) starts with testing the workflow with unfamiliar users
+and a prospective team.

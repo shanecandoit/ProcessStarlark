@@ -5,9 +5,7 @@ whole-project releases, production evaluation, and rollback implemented,
 2026-11-19. Hosted accounts, authenticated roles, tenant permissions, and billing
 remain planned. Start with the [cache and release usage guide](cache-releases.md)
 and [durable draft guide](saas-usage.md).
-The [near-term plan](#near-term-plan) prioritizes the local playground workflow,
-behavior comparison, question-flow usability, and measured retention/performance.
-Authentication is deferred from this sequence.
+The [roadmap](roadmap.md) tracks product priorities and proposed features.
 The local service can serve the playground with explicit draft saves and
 immutable source history; the public static playground remains browser-only.
 See the [source version plan](plan-source-versions.md) for this implementation.
@@ -101,7 +99,7 @@ Ordinary browser questions and check reports are not automatically uploaded.
 ## Milestone 2: durable, authenticated pilot
 
 This comes before public exposure and hosted production promotion. It does not
-block the local playground work in the near-term plan.
+block local usability work.
 
 - Establish tenant, project, draft, and user membership. Author identity must
   come from the authenticated principal, not a submitted JSON label.
@@ -184,8 +182,6 @@ into a broadly shared workspace. Decide retention and redaction with users.
 Measure latency, error/unknown rates, resource usage, and cache behavior on an
 agreed workload before setting capacity claims or SLOs. Add rate limits,
 backpressure, graceful shutdown, recovery drills, and release-aware logging.
-The previous speculative 10k RPS, millisecond, and cache-hit-rate figures were
-not measured acceptance evidence.
 
 ## User journey and guidance
 
@@ -221,90 +217,11 @@ concepts. "Ready" means enough examples under policy, not "checked" or "live."
 Run `go test ./...`, `go test -race ./internal/draftstore ./internal/workspace ./internal/server`,
 `node --test web/*.test.js`, and `sh web/build.sh` before merging.
 Replay the guide against a real local service as well as the in-process tests.
-Do not claim hosted readiness, compliance, performance, or completed phases
-based only on the presence of a struct or a green example walkthrough.
 
-## Near-term plan
+## Future work
 
-Revised 2026-11-19. Cache identity, SQLite persistence, local source history,
-review/release APIs, rollback, and playground build verification are implemented.
-A first pass of priorities 1–3 is now implemented: local review/release UI,
-pinned scenario comparisons, and successive-question progress/reuse. See the
-[usage guide](playground-review-guide.md). Browser end-to-end tests cover the
-initial flows; broader UX evaluation and the actual [usability sessions](usability-sessions.md)
-remain open. The table retains the completion criteria, not a claim that every
-priority is complete.
-
-| Priority | Work | Completion criterion |
-|---|---|---|
-| 1 | **Playground review/release workflow** | Save, inspect changes/checks, approve or reject, evaluate live, and roll back through the UI; stale reviews are clearly explained. |
-| 2 | **Behavior comparison report - new proposal** | Run named scenarios against an active release and a pinned draft; show changed answers, newly answered calls, unresolved calls, and errors. |
-| 3 | **Question-flow polish and usability sessions** | Users can resolve several missing answers and understand which saved facts the rules reused. |
-| 4 | **Retention and measured performance** | Inspect storage/cache growth, define retention rules, and benchmark representative workloads before adding more caching. |
-
-### 1. Playground review/release workflow
-
-Use the existing local APIs and actor labels. Show saved draft state, pinned
-check results, review status, and active release as separate states. Let users
-inspect source/example changes and affected functions, approve or reject with
-the existing reviewer separation, evaluate the active release, and select a
-retained release for rollback. Explain stale source, runtime, or production-base
-conflicts and preserve unsaved work while the user reviews the newer state.
-
-Acceptance is the shipping workflow completed through the UI without curl:
-save Germany's zone, inspect the checked change, activate it, verify the live
-quote, and roll back. Include a rejection and a stale-review recovery path.
-
-### 2. Behavior comparison report
-
-Start with a small saved set of named, representative shipping requests. Pin
-the scenario set, active release, draft source version, and runtime used by a
-report. Compare actual runtime outcomes, including changed answers, previously
-unresolved calls that now return answers, calls that become unresolved, and
-evaluation errors. Show unchanged outcomes too so the compared set is clear.
-Do not silently switch the baseline if production or the draft changes; mark
-the displayed comparison stale and let the user request a new report.
-
-Keep scenario comparisons separate from implementation checks. Passing the
-selected scenarios does not establish that every possible input is unchanged,
-and scenario calls do not automatically become authored examples. Evaluation
-must not edit either snapshot or a draft's question queue.
-
-Browser end-to-end tests ship with priorities 1 and 2. Cover actual table edits,
-saving, reload, stale checks/reviews, conflict recovery, comparison results,
-activation, live evaluation, and rollback. Existing Node/WASM smoke checks remain
-useful but do not substitute for exercising the page and its controls.
-
-### 3. Question-flow polish and usability sessions
-
-Keep the original request visible while successive missing calls are answered
-in order and the request reruns. Make clear which saved fact was added and
-where it is reused; keep source and raw calls optional. Test the multi-question
-flow as well as reuse in a second request.
-
-Run formative sessions with people unfamiliar with Park, using the existing
-[usability tasks and proposed targets](plan-treemap-visualizer.md#2-compare-an-outline-with-nested-frames-in-the-same-flow).
-Record completion, wrong edits, help needed, and users' explanations. Prioritize
-observed confusion before adding more visualization or language features.
-
-### 4. Retention and measured performance
-
-Measure source/version, review/release, activity/question, and computed-cache
-growth separately. Define retention rules that preserve active releases,
-pending-review snapshots, required ancestry, and recovery/export needs. Cache
-deletion remains safe; source/release retention needs explicit policies.
-
-Benchmark representative cold and warm workloads, repeated and distinct inputs,
-dependency changes, latency, cache hits/misses, and storage growth. Use the
-results to decide whether production caching, bounded runtime-call sampling,
-eviction, or a different release-state storage layout is warranted. Do not
-commit to those implementations or performance targets before measurement.
-
-## Deferred from the near-term sequence
-
-Authentication, tenant/project membership, authenticated release roles, and
-hosted operations remain prerequisites for a hosted service. They are not
-prerequisites for these local workflows. Billing and integrations follow a
-demonstrated pilot need. New value types, override syntax, shared caches, and
-additional visualization work remain separate proposals to revisit when the
-workflow and usability evidence justify them.
+The [roadmap](roadmap.md) tracks user validation, a simpler rule-owner workspace,
+saved comparisons, question ownership, authenticated collaboration, application
+integration, and retention/measurement. Local review/release controls, scenario
+comparisons, and successive-question handling are implemented; the
+[review guide](playground-review-guide.md) describes the current workflow.

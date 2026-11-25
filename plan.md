@@ -333,23 +333,10 @@ hand, run a call or answer a queued question, and open an accurate `park.html` a
 edit. Removing examples and manually rebuilding must leave the example set and
 catalog consistent.
 
-## V2 direction: bounded call cache
+## Future work
 
-Extend caching with a bounded sample of each function's runtime calls:
-
-- Retain the first few successful calls and the most recent few calls. Keep the
-  early window fixed and advance the recent window as calls succeed.
-- Store retained calls as canonical JSON input/output records, with function,
-  execution identity, and call order. Store a call shared by both windows once.
-- Include successful authored-example hits, computed-cache hits, and body
-  evaluations. These are runtime calls, not authored examples.
-- Keep revision provenance so stale outputs cannot satisfy current lookups. Test
-  runs continue to avoid persistent cache writes.
-- Keep authored examples authoritative. Retained calls do not become authored
-  examples or count toward the two-example requirement.
-- Decide window sizes, repeated-call accounting, revision retention, and any
-  catalog display during v2 design. This is outside the current acceptance
-  criteria.
+Bounded runtime-call sampling and other proposals are tracked in the
+[roadmap](docs/roadmap.md). They are outside the current acceptance criteria.
 
 ## Dependency references
 

@@ -11,8 +11,8 @@ In Park, the people who know the rules write **examples** instead: "a 500 g
 parcel to the US costs $5.99". The examples aren't a description of the
 system; they are its answers, from the day they're written. Developers then
 write code for the general rule, filling in the cases nobody listed. Code
-never overrides an example, and Park checks that the two agree. When a case
-comes up that neither covers, Park doesn't guess: it asks the people who own
+never overrides an example, and explicit checks compare code with examples.
+When a case comes up that neither covers, Park asks the people who own
 the rule, and their answer becomes a new example.
 
 **Try it in your browser: <https://shanecandoit.github.io/ProcessStarlark/>**, with nothing to install. The default
@@ -267,9 +267,8 @@ sessions and findings are still pending.
   a business tool, geometry, and cache identity, each runnable from
   [`examples/`](examples).
 - [Implementation plan](plan.md): the full contract.
-- [Near-term product plan](docs/plan-saas.md#near-term-plan): playground reviews
-  and releases, behavior comparison, question-flow usability, and measured
-  retention/performance; authentication and hosted operations follow later.
+- [Roadmap](docs/roadmap.md): current capabilities, user validation, and
+  proposed features. [SaaS plan](docs/plan-saas.md) covers backend requirements.
 - [Caching and reviewed releases](docs/cache-releases.md): cache identity, pinned
   checks, local approval/activation, release evaluation, and rollback.
 - [Draft usage guide](docs/saas-usage.md): run the local API and a tested
@@ -277,9 +276,6 @@ sessions and findings are still pending.
 - [Browser playground](docs/plan-web-playground.md): how the playground is
   built, and what's next for it. [Guided tours](docs/plan-guided-tours.md) are
   available for addition and shipping.
-- [Treemap visualizer plan](docs/plan-treemap-visualizer.md): an open design
-  exploration for explaining answers with nested rectangles.
-- [Direction](docs/ideas-direction.md): where Park goes next.
 
 **Status:** early. The command-line tool and the browser playground work end to
 end, and their details may still change.
@@ -288,7 +284,7 @@ end, and their details may still change.
 
 The next product milestone is evidence from unfamiliar users. The
 [session protocol](docs/usability-sessions.md) is ready; participant findings
-remain pending. The [near-term plan](docs/plan-saas.md#near-term-plan) separates
+remain pending. The [roadmap](docs/roadmap.md) separates
 implemented local workflows from usability, retention/performance, and hosted
 access work.
 

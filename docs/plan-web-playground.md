@@ -2,17 +2,10 @@
 
 Status: phases 1 and 2 done, phase 3 includes Why view and guided tours,
 2026-11-10. Word-number addition is the default sample; its tour is optional.
-Direction:
-[ideas-direction.md](ideas-direction.md).
-
-The [near-term implementation order](plan-saas.md#near-term-plan) is the local
-review/release UI, a proposed pinned behavior comparison report, question-flow
-polish and usability sessions, then retention/performance measurement. Browser
-end-to-end tests accompany the review/release and comparison work. These extend
-the optional local service connection; the standalone static playground remains
-usable without it. Authentication is outside this near-term sequence.
-A first pass of review/release controls, pinned named-scenario comparisons,
-and question progress/reuse is implemented. Follow the
+Product priorities are in the [roadmap](roadmap.md). Local review/release
+controls, pinned named-scenario comparisons, and question progress/reuse are
+implemented. The standalone static playground remains usable without the
+local backend. Follow the
 [playground review guide](playground-review-guide.md); actual usability sessions
 remain pending under the [study protocol](usability-sessions.md).
 

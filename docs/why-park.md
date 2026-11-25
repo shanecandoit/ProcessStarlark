@@ -1,76 +1,46 @@
 # Why Park?
 
-This page is for programmers who want to know why Park exists and how it
-differs from what they already use. For the business case, without code, see
-[Park for business teams](for-business.md).
+Park is a small runtime and project format for pure, rule-like functions.
+It combines explicit lookup tables with code for the cases outside the table.
+For a walkthrough without code, see [Park for business teams](for-business.md).
 
-## The problem
+## Examples answer calls
 
-Much of the logic in real programs is half data and half code: alias tables,
-routing rules, error-code explanations, config migrations, pricing thresholds.
-Most languages make you pick one form:
+An authored example is part of the function's runtime behavior. A call whose
+inputs match an example returns its output, even when an implementation exists.
+A function can also remain an example-only table.
 
-- **Code.** The rules end up in `if` chains, and the cases that matter live in a
-  separate test file that drifts away from the code.
-- **Config or data.** It's easy to read and edit, but any rule that doesn't fit
-  the table needs an escape hatch back into code.
+Code handles inputs without a matching example. If neither an example nor an
+implementation answers a call, Park records a question. Errors while executing
+code are reported as errors.
 
-Park starts from the known cases and keeps them central as code is added.
+Code written before a function has two distinct examples still runs, but its
+answers are unconfirmed and queued as proposals. Two examples meet the current
+readiness policy; they do not establish correctness.
 
-## What Park does differently
+## Checks are separate
 
-1. **Examples come first, and they outrank the code.** A call whose input
-   matches an authored example returns that example's output, even when an
-   implementation exists. Examples are the source of truth, not checks run
-   after the fact.
-2. **Code is optional and starts with examples.** A function can stay an
-   example table forever. Code written before examples still runs, but until
-   the function has two examples its answers are unconfirmed and proposed back
-   to you as examples. `park test` checks whether code agrees with examples.
-3. **Unanswered calls become questions.** With no matching example and no
-   code, Park queues a question instead of guessing. Unconfirmed answers are
-   queued too, for you to confirm. Errors from running code are reported as
-   errors, not questions.
-4. **Everything is pure and deterministic.** Functions have no filesystem,
-   network, clock, environment, or randomness. Results are reproducible and safe
-   to cache, and `park test` can check every example.
-5. **Examples are documentation.** `park.html` is an offline catalog of every
-   function, with its signature, its readiness, and real example pairs.
+`park test` runs each implementation against its authored examples, bypassing
+the target function's own example and cache lookups. Dependencies retain normal
+dispatch, with computed caching disabled throughout the test run.
 
-## Comparison
+Every example is a strict implementation check. A deliberate exception saved
+as an example answers calls at runtime, but fails the check if the code disagrees.
+The implementation must handle that case too. Example-only tables are validated
+as data and cannot prove an implementation.
 
-| | Where examples live | Do examples affect what runs? | Can a function have no code? |
-|---|---|---|---|
-| Ordinary code + unit tests | Separate test files | No | No |
-| Doctests | Docstrings | No; they only verify | No |
-| Lookup tables / config | Data files | Yes, but there's no code path | Yes, but it can't generalize |
-| **Park** | **Beside the function, as its spec** | **Yes; they answer matching calls first** | **Yes, and code can be added later** |
+## Runtime and tooling
 
-Related ideas:
+Functions use [Starlark](https://github.com/bazelbuild/starlark) in stateless
+Process namespaces. They have no filesystem, network, clock, environment, or
+randomness access. The runtime enforces input, project, execution-step, and
+time limits. The same engine runs in the CLI and browser playground.
 
-- **Test-driven development** writes tests before code too, but the tests never
-  answer calls at runtime, and a function can't consist of tests alone.
-- **Programming by example** and **program synthesis** infer code from
-  examples. Park doesn't infer anything in v1: a person writes the code, and the
-  examples check it. Synthesis is listed as a possible future idea.
-- **Spreadsheets** let you mix typed-in values and formulas, but nothing checks
-  a formula against the values someone typed in by hand.
+`park run --why` records the calls and examples used to produce an answer.
+`park.html` lists functions with their signatures and examples. The local
+backend adds isolated drafts, source history, reviews, and releases.
 
-## What Park is not
-
-Park isn't a new general-purpose language. It's a small runtime and project
-format that groups [Starlark](https://github.com/bazelbuild/starlark) functions
-in stateless Process namespaces, with examples written beside the code. It suits small, pure,
-rule-like functions that people need to read, check, and extend by adding cases.
-It isn't meant for I/O, large programs, or performance-critical code.
-
-## Implementation checks are strict
-
-`park test` runs each implementation against every one of its authored
-examples. A function whose examples are deliberate exceptions to its rule (for
-example, irregular plurals beside an "add s" rule) works correctly when called,
-but it fails `park test`. This is intentional: every example is a required
-implementation check, with no exception annotation. To pass the tests, the
-implementation must handle the irregular cases too. Runtime example precedence
-and implementation verification are separate guarantees; a ready function
-(two examples) has not necessarily passed its tests.
+Park suits small deterministic rules and mappings. An application handles I/O
+and external actions around them. See the [reference](reference.md) for exact
+semantics, [design decisions](design.md) for rationale, and
+[roadmap](roadmap.md) for proposed work.
