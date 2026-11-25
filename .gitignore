@@ -4,3 +4,7 @@
 /.park/
 
 /web/.tools/node_modules/
+
+/web/.tools/.bin/
+/web/.tools/test-results/
+/web/.tools/playwright-report/

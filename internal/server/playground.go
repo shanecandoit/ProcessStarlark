@@ -10,7 +10,7 @@ import (
 // WithPlayground serves a built playground and API on one origin. The static
 // build remains usable by itself, without server drafts or cross-origin access.
 func WithPlayground(api http.Handler, dir string) (http.Handler, error) {
-	for _, name := range []string{"index.html", "app.js", "draft-client.js", "park.wasm", "worker.js"} {
+	for _, name := range []string{"index.html", "app.js", "draft-client.js", "draft-panel.js", "release-view.js", "release-panel.js", "question-flow.js", "park.wasm", "worker.js"} {
 		info, err := os.Stat(filepath.Join(dir, name))
 		if err != nil || info.IsDir() {
 			return nil, fmt.Errorf("playground build missing %s; run sh web/build.sh", name)

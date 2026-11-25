@@ -35,9 +35,5 @@ func (s *Store) ExecuteRelease(ctx context.Context, c workspace.ReleaseCommand) 
 	if err = tx.Commit(); err != nil {
 		return workspace.ReleaseResult{}, err
 	}
-	if c.Action == "run" {
-		answer := workspace.RunRelease(ctx, *result.Release, result.Production, c.Call)
-		result.Release, result.Run = nil, &answer
-	}
-	return result, nil
+	return workspace.FinishRelease(ctx, result, c)
 }

@@ -100,3 +100,23 @@ test("saved-source question flow advances hash tokens and keeps local actor attr
   assert.equal(requests[2].body.expected_state, "queued");
   assert.equal(requests[3].path, "/api/v1/drafts/demo/questions?status=all");
 });
+
+test("reviews and comparisons send captured pins without changing browser draft state",async()=>{
+ const {client,requests}=fixture([{value:{review:{id:"review"}}},{value:{comparison:{id:"report"}}},{status:409,value:{error:"production base changed"}}]);
+ client.draft=draft();client.author="developer";
+ await client.requestReview(2);
+ await client.compare(2,[{name:"Parcel",call:'Shipping.quote("DE", 800)'}]);
+ await assert.rejects(client.decideReview("review","approve",2,"checked"),e=>e.status===409);
+ assert.equal(requests[0].body.expected_state,"state-before");
+ assert.equal(requests[1].body.draft_revision,"head");assert.equal(requests[1].body.expected_generation,2);
+ assert.equal(client.draft.state_token,"state-before");assert.equal(client.draft.files["old.star"],"old");
+});
+
+test("metadata refresh advances activity tokens only when saved source and the original client state still match",()=>{
+ const {client}=fixture([]);client.draft=draft();
+ assert.equal(client.acceptMetadata({...draft(),state_token:"activity"},"state-before"),true);
+ assert.equal(client.draft.state_token,"activity");
+ assert.equal(client.acceptMetadata({...draft(),state_token:"old-response"},"state-before"),false);
+ assert.equal(client.acceptMetadata({...draft(),state_token:"changed-source",files:{"old.star":"other source"}},"activity"),false);
+ assert.equal(client.draft.state_token,"activity");
+});

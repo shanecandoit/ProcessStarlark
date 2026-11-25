@@ -14,7 +14,7 @@ export default [
     languageOptions: { globals: { CodeMirror: "readonly" } },
   },
   {
-    files: ["web/presentation.js", "web/draft-client.js"],
+    files: ["web/presentation.js", "web/draft-client.js", "web/release-view.js", "web/question-flow.js"],
     languageOptions: { globals: { module: "readonly" } },
   },
   {
@@ -22,7 +22,7 @@ export default [
     languageOptions: { sourceType: "script", globals: { ...globals.worker, Go: "readonly" } },
   },
   {
-    files: ["web/*.test.js", "web/*.cjs"],
+    files: ["web/*.test.js", "web/*.cjs", "web/.tools/**/*.cjs"],
     languageOptions: { sourceType: "commonjs", globals: globals.node },
   },
   {

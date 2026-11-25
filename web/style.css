@@ -346,3 +346,17 @@ td input.cell { font-family: var(--sans); padding: 6px 8px; }
 .draft-replace { display: block; margin: .6rem 0; }
 #draft-questions p, #draft-activity li { overflow-wrap: anywhere; }
 #source-style-out { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Local release tools keep saved source and active behavior explicitly apart. */
+#release-panel input, #release-panel select, #release-panel textarea { max-width: 100%; margin: .35rem 0; }
+#release-panel textarea { display: block; width: 100%; min-height: 10rem; font-family: monospace; }
+#release-panel label { display: block; margin-top: .6rem; }
+#release-panel p, #release-panel li, #question-journey { overflow-wrap: anywhere; }
+#release-live-call, #release-reason { width: 100%; }
+.source-comparison { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: .8rem; }
+.source-comparison pre { overflow: auto; max-height: 22rem; white-space: pre; }
+.comparison-scroll { overflow-x: auto; }
+#release-comparison-rows td { vertical-align: top; white-space: pre-wrap; overflow-wrap: anywhere; }
+#question-journey { border-left: 3px solid var(--muted); padding-left: 1rem; margin: 1rem 0; }
+#question-progress li { margin: .4rem 0; }
+@media (max-width: 700px) { .source-comparison { grid-template-columns: minmax(0,1fr); } }

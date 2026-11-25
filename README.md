@@ -197,8 +197,17 @@ For faster iteration after installing dependencies, use `npm --prefix web/.tools
 and `npm --prefix web/.tools test`. ESLint uses its
 [recommended JavaScript rules](https://eslint.org/docs/latest/use/getting-started#configuration),
 with explicit browser, worker, and Node environments. HTML and CSS are not linted;
-the smoke check verifies local asset references and the engine, while visual
-layout and browser interactions still need a browser check.
+the smoke check verifies local asset references and the engine. The separate
+Chromium suite exercises browser interactions and phone-width question flows;
+visual review and sessions with unfamiliar users remain necessary.
+
+Real-browser workflow tests also run in CI before publishing. After building,
+install Chromium and run them locally with:
+
+```sh
+web/.tools/node_modules/.bin/playwright install chromium --only-shell
+npm --prefix web/.tools run test:browser
+```
 
 ## Try an isolated draft
 
@@ -233,6 +242,14 @@ inspect an earlier version, or edit it in a new draft. See the
 formatting and basic lint. Saved-source questions can be answered or dismissed
 in the optional draft panel, with dates and local user attribution.
 
+Expand **Review, compare, and release** to inspect pinned checks/source changes,
+approve or reject a review, evaluate live behavior, compare named scenarios,
+and roll back. Start with the [playground review guide](docs/playground-review-guide.md).
+The question flow keeps the original request visible as successive missing
+facts are answered and shows when those saved facts are reused. The
+[usability session protocol](docs/usability-sessions.md) is ready; participant
+sessions and findings are still pending.
+
 ## Learn more
 
 - [Park for business teams](docs/for-business.md): the idea without code,
@@ -244,8 +261,9 @@ in the optional draft panel, with dates and local user attribution.
   a business tool, geometry, and cache identity, each runnable from
   [`examples/`](examples).
 - [Implementation plan](plan.md): the full contract.
-- [SaaS product plan](docs/plan-saas.md): implemented draft foundations and the
-  roadmap for authenticated collaboration and hosted operations.
+- [Near-term product plan](docs/plan-saas.md#near-term-plan): playground reviews
+  and releases, behavior comparison, question-flow usability, and measured
+  retention/performance; authentication and hosted operations follow later.
 - [Caching and reviewed releases](docs/cache-releases.md): cache identity, pinned
   checks, local approval/activation, release evaluation, and rollback.
 - [Draft usage guide](docs/saas-usage.md): run the local API and a tested

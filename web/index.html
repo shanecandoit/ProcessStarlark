@@ -70,6 +70,46 @@
         </details>
       </div>
     </details>
+    <details id="release-panel" class="welcome" hidden>
+      <summary>Review, compare, and release</summary>
+      <div class="welcome-body">
+        <p class="hint">Uses the saved server draft above. Actor names are local labels. Browser edits, checked source, and the active release are separate.</p>
+        <p id="release-draft-state"></p><p id="release-production" role="status"></p>
+        <div class="draft-actions"><button id="release-request" type="button">Check saved source and request review</button><button id="release-refresh" type="button" class="quiet">Refresh reviews and live state</button></div>
+        <label for="release-review">Reviews for this draft</label><select id="release-review"><option value="">Choose a review</option></select>
+        <p id="release-review-state" role="status"></p>
+        <div id="release-review-detail" hidden>
+          <p id="release-review-pin" class="hint"></p><p id="release-checks"></p>
+          <details><summary>Check report</summary><ul id="release-check-lines"></ul></details>
+          <h3>Changed examples and affected functions</h3><ul id="release-function-changes"></ul>
+          <h3>Source changes</h3><div id="release-source-changes"></div>
+        </div>
+        <label for="release-reason">Decision or rollback reason (required for rejection and rollback)</label><input id="release-reason" maxlength="1000">
+        <div class="draft-actions"><button id="release-approve" type="button">Approve and activate</button><button id="release-reject" type="button" class="quiet">Reject review</button></div>
+        <p id="release-message" role="status"></p>
+        <details id="release-comparison">
+          <summary>Compare named scenarios with the active release</summary>
+          <p class="hint">Enter a JSON array of named requests. Compare the active release with the saved draft, without adding examples or questions. Reports cover only these cases.</p>
+          <label for="release-scenarios">Named scenarios</label><textarea id="release-scenarios" rows="8" spellcheck="false"></textarea>
+          <button id="release-compare" type="button">Compare saved draft with live</button>
+          <p id="release-comparison-stale" class="stale" role="status"></p>
+          <div id="release-comparison-results" hidden><p id="release-comparison-pin" class="hint"></p>
+            <div class="comparison-scroll"><table aria-label="Behavior comparison"><thead><tr><th>Scenario</th><th>Request</th><th>Live</th><th>Saved draft</th><th>Outcome</th></tr></thead><tbody id="release-comparison-rows"></tbody></table></div>
+            <a id="release-comparison-download" download="park-comparison.json">Download pinned report</a>
+          </div>
+        </details>
+        <details id="release-live"><summary>Evaluate the active release</summary>
+          <label for="release-live-call">Live function call</label><input id="release-live-call" placeholder='Shipping.quote("DE", 800)' spellcheck="false">
+          <div class="draft-actions"><button id="release-live-copy" type="button" class="quiet">Use current playground input</button><button id="release-live-run" type="button">Run live release</button></div>
+          <pre id="release-live-result" role="status"></pre><p id="release-live-stale" class="stale"></p>
+        </details>
+        <details id="release-recovery"><summary>Release history and rollback</summary>
+          <label for="release-rollback-target">Previous release</label><select id="release-rollback-target"><option value="">Choose a previous release</option></select>
+          <button id="release-rollback" type="button" class="quiet">Roll back to selected release</button>
+          <ol id="release-history"></ol>
+        </details>
+      </div>
+    </details>
     <section id="tour" class="tourpanel" hidden aria-live="polite" aria-label="Guided tour">
       <div class="tourhead">
         <span id="tourrole" class="role"></span>
@@ -128,6 +168,7 @@
       <output id="output" aria-live="polite" tabindex="-1"></output>
       <p id="result-stale" class="stale" hidden></p>
       <p id="message"></p>
+      <section id="question-journey" hidden aria-label="Answering this request"><h3>Your request and saved answers</h3><p id="question-original"></p><ol id="question-progress"></ol><p id="question-reuse" class="hint"></p></section>
       <div id="question-slot"></div>
       <details id="why" class="why" open hidden>
         <summary>How this answer was made</summary>
@@ -180,7 +221,10 @@
 <script src="presentation.js"></script>
 <script src="draft-config.js"></script>
 <script src="draft-client.js"></script>
+<script src="release-view.js"></script>
+<script src="release-panel.js"></script>
 <script src="draft-panel.js"></script>
+<script src="question-flow.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

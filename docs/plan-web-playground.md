@@ -5,6 +5,17 @@ Status: phases 1 and 2 done, phase 3 includes Why view and guided tours,
 Direction:
 [ideas-direction.md](ideas-direction.md).
 
+The [near-term implementation order](plan-saas.md#near-term-plan) is the local
+review/release UI, a proposed pinned behavior comparison report, question-flow
+polish and usability sessions, then retention/performance measurement. Browser
+end-to-end tests accompany the review/release and comparison work. These extend
+the optional local service connection; the standalone static playground remains
+usable without it. Authentication is outside this near-term sequence.
+A first pass of review/release controls, pinned named-scenario comparisons,
+and question progress/reuse is implemented. Follow the
+[playground review guide](playground-review-guide.md); actual usability sessions
+remain pending under the [study protocol](usability-sessions.md).
+
 Run it locally from the repository root:
 
 ```sh
@@ -140,8 +151,11 @@ tests. `cmd/park-wasm` is a thin `syscall/js` bridge over it.
   usability evaluation; rectangle area does not encode a quantity.
 - **Fill-and-resume:** answer the innermost question in place and the
   original call reruns automatically (ideas #5). A first cut exists: answering
-  any question reruns the last call. Next: show the chain of questions one
-  call raises, and answer them in order.
+  any question reruns the last call. A first-pass session history now shows the
+  original request and successive saved facts, prioritizes/focuses the next
+  missing fact, and identifies reuse from the actual trace in later requests.
+  Saved-source server questions also rerun their original server request.
+  Usability sessions remain pending.
 - **Guided tours:** built; see [plan-guided-tours.md](plan-guided-tours.md).
   Tours are data (JSON steps with goals and skips), checked at build time by
   replaying them through the engine. Word-number addition is the default optional
@@ -213,8 +227,11 @@ engine. CI and release packaging use this same pipeline. After dependencies
 are installed, run `npm --prefix web/.tools run lint` or `npm --prefix web/.tools test` for
 focused checks, and `npm --prefix web/.tools run verify-build` to recheck `web/dist`.
 Go tests cover the structured bridge, projects, and tour goals too.
-HTML/CSS lint and visual/browser interaction checks are separate from this
-JavaScript and engine validation.
+HTML/CSS lint and visual review remain separate. The Playwright Chromium suite
+(`npm --prefix web/.tools run test:browser`, after browser installation) covers
+actual review/comparison/live/rollback controls, source conflicts, reload, and
+successive missing facts at phone width. CI runs it before publishing. It does
+not substitute for the planned sessions with people unfamiliar with Park.
 Browser verification should include the full missing-answer/reuse flow,
 exact-example shortcuts, editing from a visual step, stale navigation,
 independent check results, preference persistence, and a narrow viewport.

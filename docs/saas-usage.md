@@ -7,7 +7,9 @@ rules, and review what changed.
 **Available today:** a browser playground and a local draft API with SQLite
 persistence, tracked migrations, source formatting, and a question queue.
 Checked reviews, local release activation, production evaluation, and rollback
-are available through the [cache and release guide](cache-releases.md).
+are available through the [cache and release guide](cache-releases.md), with
+browser controls and pinned scenario comparisons in the
+[playground review guide](playground-review-guide.md).
 **Planned:** hosted accounts and authenticated shared workspaces. This draft
 walkthrough changes draft source only; the separate release walkthrough
 explicitly activates and rolls back local releases.

@@ -22,14 +22,16 @@ var (
 // ReleaseCommand is an operation on the local project's review/release state.
 // ExpectedGeneration is a pointer because generation zero is a real precondition.
 type ReleaseCommand struct {
-	Action             string `json:"action"`
-	ID                 string `json:"id,omitempty"`
-	DraftID            string `json:"draft_id,omitempty"`
-	Author             string `json:"author,omitempty"`
-	ExpectedState      string `json:"expected_state,omitempty"`
-	ExpectedGeneration *int   `json:"expected_generation,omitempty"`
-	Reason             string `json:"reason,omitempty"`
-	Call               string `json:"call,omitempty"`
+	Action             string     `json:"action"`
+	ID                 string     `json:"id,omitempty"`
+	DraftID            string     `json:"draft_id,omitempty"`
+	Author             string     `json:"author,omitempty"`
+	ExpectedState      string     `json:"expected_state,omitempty"`
+	ExpectedGeneration *int       `json:"expected_generation,omitempty"`
+	Reason             string     `json:"reason,omitempty"`
+	Call               string     `json:"call,omitempty"`
+	DraftRevision      string     `json:"draft_revision,omitempty"`
+	Scenarios          []Scenario `json:"scenarios,omitempty"`
 }
 
 type Review struct {
@@ -102,13 +104,15 @@ type ProductionRun struct {
 }
 
 type ReleaseResult struct {
-	Production  Production     `json:"production"`
-	Review      *Review        `json:"review,omitempty"`
-	Release     *Release       `json:"release,omitempty"`
-	Reviews     []Review       `json:"reviews,omitempty"`
-	Releases    []Release      `json:"releases,omitempty"`
-	Activations []Activation   `json:"activations,omitempty"`
-	Run         *ProductionRun `json:"run,omitempty"`
+	Production  Production        `json:"production"`
+	Review      *Review           `json:"review,omitempty"`
+	Release     *Release          `json:"release,omitempty"`
+	Reviews     []Review          `json:"reviews,omitempty"`
+	Releases    []Release         `json:"releases,omitempty"`
+	Activations []Activation      `json:"activations,omitempty"`
+	Run         *ProductionRun    `json:"run,omitempty"`
+	Comparison  *ComparisonReport `json:"comparison,omitempty"`
+	Candidate   *SourceVersion    `json:"candidate,omitempty"` // Captured only inside the store; removed before returning.
 }
 
 func (c ReleaseCommand) Mutates() bool {
@@ -125,7 +129,7 @@ func (s *ReleaseState) Execute(ctx context.Context, base Files, read func(string
 	if c.Mutates() && strings.TrimSpace(c.Author) == "" {
 		return result, fmt.Errorf("%w: author is required", ErrReleaseInput)
 	}
-	if c.Action == "request" || c.Action == "approve" || c.Action == "rollback" {
+	if c.Action == "request" || c.Action == "approve" || c.Action == "rollback" || c.Action == "compare" {
 		if c.ExpectedGeneration == nil || *c.ExpectedGeneration < 0 {
 			return result, fmt.Errorf("%w: expected_generation is required and must be nonnegative", ErrReleaseInput)
 		}
@@ -271,6 +275,29 @@ func (s *ReleaseState) Execute(ctx context.Context, base Files, read func(string
 		}
 		s.activate(release.ID, "rollback", c.Author, c.Reason, now)
 		result.Release = &release
+	case "compare":
+		if err := validateScenarios(c.Scenarios); err != nil {
+			return result, err
+		}
+		release, ok := s.Releases[s.Production.ReleaseID]
+		if !ok {
+			return result, fmt.Errorf("%w: activate a baseline release before comparing", ErrReleaseNotFound)
+		}
+		if release.Runtime != engine.RuntimeIdentity {
+			return result, fmt.Errorf("%w: active release requires a different runtime", ErrReleaseConflict)
+		}
+		if c.DraftRevision == "" {
+			return result, fmt.Errorf("%w: draft_revision is required", ErrReleaseInput)
+		}
+		d, err := read(c.DraftID)
+		if err != nil {
+			return result, err
+		}
+		version, ok := d.SourceVersion(c.DraftRevision)
+		if !ok {
+			return result, fmt.Errorf("%w: draft source version not found", ErrReleaseNotFound)
+		}
+		result.Release, result.Candidate = &release, &version
 	case "run":
 		release, ok := s.Releases[s.Production.ReleaseID]
 		if !ok {

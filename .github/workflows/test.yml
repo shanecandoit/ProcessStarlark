@@ -25,3 +25,7 @@ jobs:
         run: go test -race ./internal/draftstore ./internal/server ./internal/workspace
       - name: Lint, test, build, and verify the playground
         run: sh web/build.sh
+      - name: Exercise review, comparison, and question flows in Chromium
+        run: |
+          web/.tools/node_modules/.bin/playwright install --with-deps chromium --only-shell
+          npm --prefix web/.tools run test:browser

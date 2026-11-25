@@ -7,10 +7,12 @@
   "scripts": {
     "lint": "cd ../.. && web/.tools/node_modules/.bin/eslint --config web/.tools/eslint.config.mjs web --max-warnings 0",
     "test": "node --test ../*.test.js",
-    "verify-build": "node ../verify-build.cjs"
+    "verify-build": "node ../verify-build.cjs",
+    "test:browser": "mkdir -p .bin && go build -o .bin/park-drafts ../../cmd/park-drafts && playwright test --config playwright.config.cjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@playwright/test": "1.65.1",
     "eslint": "10.12.0",
     "globals": "17.14.0"
   }

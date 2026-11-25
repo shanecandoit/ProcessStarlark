@@ -59,7 +59,7 @@ func TestPlaygroundServesSameOriginAPIAndConfig(t *testing.T) {
 	if _, err := WithPlayground(shippingHandler(t), dir); err == nil {
 		t.Fatal("missing browser build accepted")
 	}
-	for _, name := range []string{"index.html", "app.js", "draft-client.js", "park.wasm", "worker.js"} {
+	for _, name := range []string{"index.html", "app.js", "draft-client.js", "draft-panel.js", "release-view.js", "release-panel.js", "question-flow.js", "park.wasm", "worker.js"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("playground"), 0600); err != nil {
 			t.Fatal(err)
 		}

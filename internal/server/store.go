@@ -93,9 +93,8 @@ func (s *memoryStore) ExecuteRelease(ctx context.Context, c workspace.ReleaseCom
 	}
 	var copy workspace.ReleaseResult
 	err = json.Unmarshal(b, &copy)
-	if err == nil && c.Action == "run" {
-		answer := workspace.RunRelease(ctx, *copy.Release, copy.Production, c.Call)
-		copy.Release, copy.Run = nil, &answer
+	if err != nil {
+		return workspace.ReleaseResult{}, err
 	}
-	return copy, err
+	return workspace.FinishRelease(ctx, copy, c)
 }

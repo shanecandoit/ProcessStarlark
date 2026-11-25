@@ -164,10 +164,16 @@ with it, but nothing should close it off. Constraints that keep the door open:
 
 ## Product path
 
-The [SaaS plan](plan-saas.md) tracks implemented local draft foundations and
-the remaining hosted-product milestones. The [usage guide](saas-usage.md)
-replays the working shipping flow. What a business team still needs before
-using a hosted Park day to day:
+The [near-term plan](plan-saas.md#near-term-plan) is the implementation order:
+playground review/release workflow, a proposed behavior comparison report,
+question-flow polish and usability sessions, then retention and measured
+performance. Browser end-to-end tests accompany the first two priorities.
+Authentication is deferred from that local sequence.
+
+The [usage guide](saas-usage.md) replays the working shipping flow. The ideas
+below are longer-term product directions, not an alternative priority order;
+some foundations, including local history, approvals, and evaluation APIs, are
+already implemented:
 
 1. **Hosted playground** with word-number addition first, as the thing to
    send people. The addition tour introduces examples and rules; shipping
@@ -178,8 +184,9 @@ using a hosted Park day to day:
    and values shown without Starlark quotes.
 3. **Business-shaped values:** decimals and money, dates, and ranges or
    patterns in examples ("any parcel over 30 kg").
-4. **Overrides** (#2): negotiated prices and one-off exceptions are everyday
-   business cases, so D17 needs settling before this ships.
+4. **Overrides** (#2): negotiated prices and one-off exceptions could motivate
+   a separate construct. Current D17 requires strict checks; revisit that
+   decision only with concrete workflow evidence.
 5. **Accounts, change history, and approvals:** who changed which answer,
    and review before it goes live. `--why` (#1) is the read side of the same
    audit story.

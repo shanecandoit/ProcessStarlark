@@ -9,12 +9,14 @@ import (
 )
 
 type releaseRequest struct {
-	Author             string `json:"author"`
-	ExpectedState      string `json:"expected_state"`
-	ExpectedGeneration *int   `json:"expected_generation"`
-	Reason             string `json:"reason"`
-	ReleaseID          string `json:"release_id"`
-	Call               string `json:"call"`
+	Author             string               `json:"author"`
+	ExpectedState      string               `json:"expected_state"`
+	ExpectedGeneration *int                 `json:"expected_generation"`
+	Reason             string               `json:"reason"`
+	ReleaseID          string               `json:"release_id"`
+	Call               string               `json:"call"`
+	DraftRevision      string               `json:"draft_revision"`
+	Scenarios          []workspace.Scenario `json:"scenarios"`
 }
 
 func (api *draftAPI) releaseRoutes(mux *http.ServeMux) {
@@ -23,6 +25,7 @@ func (api *draftAPI) releaseRoutes(mux *http.ServeMux) {
 		{"GET /api/v1/releases", "releases"}, {"GET /api/v1/releases/{id}", "release"},
 		{"GET /api/v1/production", "status"}, {"POST /api/v1/drafts/{id}/reviews", "request"},
 		{"POST /api/v1/reviews/{id}/approve", "approve"}, {"POST /api/v1/reviews/{id}/reject", "reject"},
+		{"POST /api/v1/drafts/{id}/compare", "compare"},
 		{"POST /api/v1/production/rollback", "rollback"}, {"POST /api/v1/production/run", "run"},
 	} {
 		mux.HandleFunc(route.pattern, func(w http.ResponseWriter, r *http.Request) {
@@ -33,7 +36,8 @@ func (api *draftAPI) releaseRoutes(mux *http.ServeMux) {
 					return
 				}
 				cmd.Author, cmd.ExpectedState, cmd.ExpectedGeneration, cmd.Reason, cmd.Call = req.Author, req.ExpectedState, req.ExpectedGeneration, req.Reason, req.Call
-				if cmd.Action == "request" {
+				cmd.DraftRevision, cmd.Scenarios = req.DraftRevision, req.Scenarios
+				if cmd.Action == "request" || cmd.Action == "compare" {
 					cmd.DraftID, cmd.ID = cmd.ID, ""
 				}
 				if cmd.Action == "rollback" {

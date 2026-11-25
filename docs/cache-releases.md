@@ -6,7 +6,9 @@ evaluation, and rollback with memory or SQLite storage.
 
 The service remains loopback-only. Actor names are supplied local labels, not
 login identities or enforced project roles. Use this workflow locally; hosted
-accounts, tenant permissions, and a review UI remain future work. The static
+accounts and tenant permissions remain future work. The local playground now
+includes review/release controls and behavior comparisons; see the
+[playground guide](playground-review-guide.md). The static
 browser playground has no release service or persistent result cache.
 
 ## Try the cache example
@@ -207,6 +209,7 @@ actor, reason, and UTC date. The reference files remain unchanged.
 | Method and route | Result / required fields |
 |---|---|
 | `POST /api/v1/drafts/{id}/reviews` | Fresh checks and pinned review; `author`, `expected_state`, `expected_generation` |
+| `POST /api/v1/drafts/{id}/compare` | Compare named scenarios against active release and pinned draft; see [contract](playground-review-guide.md#comparison-api) |
 | `GET /api/v1/reviews` | All reviews |
 | `GET /api/v1/reviews/{id}` | Full pinned review and decision |
 | `POST /api/v1/reviews/{id}/approve` | Atomic release creation/activation; `author`, `expected_generation`, optional `reason` |

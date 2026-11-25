@@ -60,14 +60,17 @@ func build() error {
 		return err
 	}
 	copies := map[string]string{
-		filepath.Join("web", "index.html"):      "index.html",
-		filepath.Join("web", "app.js"):          "app.js",
-		filepath.Join("web", "presentation.js"): "presentation.js",
-		filepath.Join("web", "draft-config.js"): "draft-config.js",
-		filepath.Join("web", "draft-client.js"): "draft-client.js",
-		filepath.Join("web", "draft-panel.js"):  "draft-panel.js",
-		filepath.Join("web", "style.css"):       "style.css",
-		filepath.Join("web", "worker.js"):       "worker.js",
+		filepath.Join("web", "release-view.js"):  "release-view.js",
+		filepath.Join("web", "release-panel.js"): "release-panel.js",
+		filepath.Join("web", "question-flow.js"): "question-flow.js",
+		filepath.Join("web", "index.html"):       "index.html",
+		filepath.Join("web", "app.js"):           "app.js",
+		filepath.Join("web", "presentation.js"):  "presentation.js",
+		filepath.Join("web", "draft-config.js"):  "draft-config.js",
+		filepath.Join("web", "draft-client.js"):  "draft-client.js",
+		filepath.Join("web", "draft-panel.js"):   "draft-panel.js",
+		filepath.Join("web", "style.css"):        "style.css",
+		filepath.Join("web", "worker.js"):        "worker.js",
 	}
 	for from, to := range copies {
 		b, err := os.ReadFile(from)

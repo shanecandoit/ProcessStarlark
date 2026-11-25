@@ -19,7 +19,7 @@
       });
       const value = await response.json();
       if (!response.ok) {
-        const error = new Error(value.error || value.result?.message || `Request failed (${response.status})`);
+        const error = new Error(value.error || value.result?.message || value.run?.message || `Request failed (${response.status})`);
         error.status = response.status; error.remote = value.draft;
         throw error;
       }
@@ -72,6 +72,30 @@
       });
       this.draft = value.draft;
       return this.draft;
+    }
+    production() { return this.request("production"); }
+    reviews() { return this.request("reviews"); }
+    releases() { return this.request("releases"); }
+    requestReview(generation) {
+      if (!this.draft) throw new Error("Open a saved draft first.");
+      return this.request(`drafts/${encodeURIComponent(this.draft.id)}/reviews`, { author:this.author, expected_state:this.draft.state_token, expected_generation:generation });
+    }
+    decideReview(id, decision, generation, reason) {
+      if (!["approve", "reject"].includes(decision)) throw new Error("Choose approve or reject.");
+      return this.request(`reviews/${encodeURIComponent(id)}/${decision}`, { author:this.author, expected_generation:generation, reason });
+    }
+    runLive(call) { return this.request("production/run", { call }); }
+    rollback(id, generation, reason) {
+      return this.request("production/rollback", { author:this.author, release_id:id, expected_generation:generation, reason });
+    }
+    compare(generation, scenarios) {
+      if (!this.draft) throw new Error("Open a saved draft first.");
+      return this.request(`drafts/${encodeURIComponent(this.draft.id)}/compare`, { draft_revision:this.draft.revision, expected_generation:generation, scenarios });
+    }
+    acceptMetadata(remote, expectedState) {
+      if (!this.draft || remote.id!==this.draft.id || this.draft.state_token!==expectedState || key(remote.files)!==key(this.draft.files)) return false;
+      this.draft=remote;
+      return true;
     }
     dirty(files) { return !this.draft || key(files) !== key(this.draft.files); }
   }

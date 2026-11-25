@@ -10,6 +10,7 @@ const TOUR_PREFIX = "#tour=";      // #tour=shipping or #tour=shipping/4 (1-base
 const TOUR_SAMPLE = -2;            // state.sample while touring
 const $ = (id) => document.getElementById(id);
 const view = globalThis.ParkView;
+const questionFlow = new globalThis.ParkQuestionFlow.QuestionFlow();
 let serverPanel = null;
 const UI_KEY = "park-playground-ui-v1";
 const preferences = (() => {
@@ -281,7 +282,7 @@ function renderProblem() {
 
 let shownQuestions = "";
 function renderQuestions() {
-  const qs = state.snapshot?.questions || [];
+  const qs = questionFlow.order(state.snapshot?.questions || []);
   const section = $("questions-section");
   const destination = state.result && ["unresolved", "unconfirmed"].includes(state.result.status) ? $("question-slot") : $("questions-home");
   if (section.parentElement !== destination) destination.append(section);
@@ -311,10 +312,15 @@ function question(q) {
       try { if (typeof JSON.parse(literal) !== "string") literal = JSON.stringify(value.value); }
       catch { literal = JSON.stringify(value.value); }
     }
-    const r = await answer(`${q.call} == ${literal}`);
+    const r = await answer(`${q.call} == ${literal}`, q, literal);
     button.disabled = false;
     if (r && r.status !== "ok") { error.textContent = r.message; value.focus(); }
-    else { delete state.questionDrafts[q.call]; serverPanel?.render(); $("output").focus(); }
+    else {
+      delete state.questionDrafts[q.call]; serverPanel?.render();
+      const next=$("questions").querySelector("input");
+      if (next && ["unresolved","unconfirmed"].includes(state.result?.status)) next.focus();
+      else $("output").focus();
+    }
   };
   const button = el("button", { type: "button", onclick: submit }, q.hasProposal ? "Confirm example" : "Save example");
   value.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); submit(); } });
@@ -523,6 +529,7 @@ function toggleCode(open, persist = true) {
 function showResult(r, note) {
   if (r.obsolete) return;
   state.result = r;
+  questionFlow.observe(r);
   state.resultKey = r.projectKey || view.projectKey(state.files);
   state.resultNote = note || "";
   renderResult();
@@ -533,6 +540,10 @@ function renderResult() {
   const r = state.result;
   $("result").hidden = !r;
   if (!r) return;
+  $("question-journey").hidden=!questionFlow.original || (!questionFlow.steps.length && !questionFlow.reused.length);
+  $("question-original").textContent=`Original request: ${questionFlow.original}`;
+  $("question-progress").replaceChildren(...questionFlow.steps.map(fact=>el("li",{},`Saved ${fact.call} = ${view.readable(fact.output)}`)));
+  $("question-reuse").textContent=questionFlow.reused.length ? `This request reused saved answers: ${questionFlow.reused.map(f=>f.call).join(", ")}.` : questionFlow.steps.length ? "Answer saved. Park reruns the original request to find the next missing fact or calculate the result." : "";
   const stale = state.resultKey !== view.projectKey(state.files);
   const inputChanged = r.executedCall && r.executedCall !== $("call").value.trim();
   const status = $("status");
@@ -636,13 +647,15 @@ async function run(text) {
   text = text.trim();
   if (!text) return;
   state.lastCall = text;
+  questionFlow.start(text);
   save();
   showResult(await call("run", text));
 }
 
-async function answer(line) {
+async function answer(line, question, literal) {
   const r = await call("addExample", line);
   if (r.obsolete || r.status !== "ok") return r;
+  questionFlow.answered(question,literal);
   // Resume: rerun the call that raised the question, now that it's answered.
   if (state.lastCall) showResult(await call("run", state.lastCall), "Saved your example and reran the original request.");
   else showResult(r);
@@ -690,6 +703,7 @@ function loadProject({ files, call: callText = "", active = "", sample = 0, samp
   clearTimeout(loadTimer);
   if (!serverDraft) serverPanel?.detach();
   state.projectID++;
+  questionFlow.reset();
   state.files = { ...files };
   state.active = active in files ? active : Object.keys(files).filter((n) => n.endsWith(".star")).sort()[0] || "";
   // Older saves used picker positions. Keep Reset tied to the original

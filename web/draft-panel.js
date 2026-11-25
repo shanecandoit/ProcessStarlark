@@ -4,6 +4,7 @@
     const $ = id => document.getElementById(id);
     const { Client, key } = root.ParkDrafts;
     let client = new Client(), busy = false, versions = [], serverResult = null;
+ let releasePanel = null;
     const buttons = ["draft-create", "draft-save", "draft-open", "draft-refresh", "draft-branch", "draft-run", "draft-questions-refresh"];
     const answers = new Map();
     const message = text => { $("draft-message").textContent = text; };
@@ -28,6 +29,7 @@
       $("draft-questions-refresh").disabled = busy || !draft;
       for (const button of $("draft-questions").querySelectorAll("button")) button.disabled = busy || (button.dataset.action === "answer" && (hooks.pending?.() || client.dirty(hooks.files())));
       $("draft-replace-warning").hidden = !pending() && !client.dirty(hooks.files());
+      releasePanel?.render();
       if (serverResult) {
         const stale = serverResult.draft !== draft?.id || serverResult.revision !== draft?.revision || serverResult.call !== hooks.call();
         $("draft-server-result").textContent = serverResult.text + (stale ? " · Saved source or input changed; run again." : "");
@@ -56,6 +58,7 @@
         const item = document.createElement("li"); item.textContent = `${entry.author} · ${new Date(entry.timestamp).toLocaleString()} · ${entry.message} · ${short(entry.revision)}`; return item;
       }));
       await questions(c);
+      await releasePanel?.refresh(c);
     }
     async function list(c) {
       const value = await c.request("drafts");
@@ -93,7 +96,14 @@
             if (c !== client) return;
             if (answers.get(answerKey) === typed) answers.delete(answerKey);
             await hooks.saved?.(sent, c.draft.files);
-            message("Saved the server answer. Run saved source again to reuse it."); await history(c);
+            if (serverResult?.call) {
+              const original = serverResult.call;
+              const resumed = await c.operation({kind:"run",call:original});
+              serverResult = {draft:c.draft.id,revision:c.draft.revision,call:original,text:resumed.output ? `Server result: ${root.ParkView.readable(resumed.output)} (${resumed.status})` : resumed.message || resumed.status};
+              message(resumed.status === "unresolved" ? "Answer saved and original request rerun. Supply the next missing answer below." : "Answer saved and reused by the original request.");
+            } else message("Saved the server answer. Run saved source to reuse it.");
+            await history(c);
+            $("draft-questions").querySelector("input")?.focus();
           });
         }); item.append(submit);
         const dismiss = document.createElement("button"); dismiss.type = "button"; dismiss.className = "quiet"; dismiss.textContent = "Dismiss question";
@@ -178,7 +188,7 @@
     $("draft-questions-all").addEventListener("change", () => action(c => questions(c)));
     try { $("draft-author").value = root.localStorage.getItem("park-local-author") || "playground"; } catch { /* optional */ }
     client.author = author();
-    $("draft-author").addEventListener("input", () => { client.author = author(); try { root.localStorage.setItem("park-local-author", client.author); } catch { /* optional */ } });
+    $("draft-author").addEventListener("input", () => { client.author = author(); try { root.localStorage.setItem("park-local-author", client.author); } catch { /* optional */ } render(); });
     $("draft-run").addEventListener("click", () => action(async c => {
       if (c.dirty(hooks.files()) || hooks.pending?.()) return;
       const executedCall = hooks.call();
@@ -190,6 +200,7 @@
     client.request("storage").then(value => {
       $("draft-storage-info").textContent = value.storage === "sqlite" ? "SQLite storage: saved drafts, source history, and server questions survive restarts. Keep database backups too." : "Memory storage: server drafts and questions disappear when it stops. Download work you want to keep.";
     }, () => { $("draft-storage-info").textContent = "Storage status unavailable. Download work you want to keep."; });
+    releasePanel = root.ParkReleasePanel.initialize({ client:()=>client, files:hooks.files, pending:()=>busy || pending(), call:hooks.call });
     render();
     return {
       render,
@@ -201,6 +212,7 @@
         $("draft-questions").replaceChildren(); $("draft-question-count").textContent = ""; $("draft-server-result").textContent = "";
         $("draft-created").textContent = ""; $("draft-activity").replaceChildren();
         render();
+        releasePanel?.refresh().catch(error=>{ $("release-message").textContent=error.message; });
       },
     };
   }
