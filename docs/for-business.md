@@ -102,11 +102,16 @@ each function's examples are a table you can type into or paste spreadsheet
 rows into. Underneath, they're saved as text files that developers work
 with directly.
 
-Not built yet, and needed before a business team could use it day to day:
+The local backend now includes SQLite persistence, isolated drafts, immutable
+source history, question tracking, behavior comparisons, reviews, release
+activation, rollback, and an evaluation API. The playground can connect to it
+for explicit saves and reviews. See the [review guide](playground-review-guide.md).
 
-- a table editor that stands on its own, without the code beside it;
-- accounts, a change history, and approvals;
-- an API so other systems can ask Park for answers.
+Before a hosted team pilot, Park still needs accounts, tenant/project
+permissions, authenticated reviewer roles, and hosted operations. Local actor
+names are labels, not verified identities. A simpler rule-owner experience and
+sessions with unfamiliar users remain open work; see the
+[study protocol](usability-sessions.md).
 
 If this matches a problem your team has, that's the conversation we want to
 have.

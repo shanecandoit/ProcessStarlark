@@ -390,15 +390,15 @@ edits (D21). The whole file must read cleanly before anything is written.
 
 ## Resolved questions
 
-- **Audience — resolved 2026-11-06.** The idea is explained for business
+- **Audience - resolved 2026-11-06.** The idea is explained for business
   readers (users who'd write examples, and buyers); the technical docs and CLI
   are for programmers. The aim is a B2B product. See
   [Direction](ideas-direction.md#positioning) and
   [Park for business teams](for-business.md).
 
-- **Deliberate exceptions — resolved by [D17](#d17-every-example-is-a-strict-implementation-check).**
+- **Deliberate exceptions - resolved by [D17](#d17-every-example-is-a-strict-implementation-check).**
   Keep strict checks; no exception annotation in the current version.
-- **Purpose of the two-example rule — revised in [D18](#d18-code-without-two-examples-runs-unconfirmed).**
+- **Purpose of the two-example rule - revised in [D18](#d18-code-without-two-examples-runs-unconfirmed).**
   Keep requiring two examples; code runs before then, but its answers are
   unconfirmed proposals until a person confirms them.
 

@@ -17,7 +17,7 @@ import (
 	"github.com/shanecandoit/ProcessStarlark/internal/source"
 )
 
-const usage = `park — example-driven Starlark functions
+const usage = `park - example-driven Starlark functions
 
 Usage: park [--root PATH] COMMAND [FLAGS] [OPERANDS]
 

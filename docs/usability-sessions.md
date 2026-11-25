@@ -46,7 +46,7 @@ graphs. End by asking which labels/actions were least clear.
 
 | Session | Task | Completed unaided? | Time observed | Wrong edits | Help requested/given | Participant explanation | Confusion / severity | Proposed follow-up |
 |---|---|---|---|---|---|---|---|---|
-| Pending | — | — | — | — | — | — | — | — |
+| Pending | - | - | - | - | - | - | - | - |
 
 Use anonymous session IDs. Keep observations separate from interpretations.
 Record skipped/abandoned tasks and missing measurements rather than inventing

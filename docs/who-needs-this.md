@@ -1,10 +1,14 @@
 
 # Who needs this now
 
-## AI is the strongest angle, without leading with synthesis.
+These are audience hypotheses to validate, not evidence of customer demand.
+The shipping example is the concrete demo; use interviews to choose a first
+market before expanding the scope.
+
+## AI is a possible angle, without leading with synthesis.
 
 - AI writing code: teams generating code with AI need a way to say what's right that a non-programmer can write. Examples are that; generated code is checked against them like any other code.
-- AI answering questions: a function's code could be a model call, such as "classify this support ticket". Examples then become answers people have pinned, which always win over the model. The question queue becomes the human review step. Plenty of teams are looking for exactly this right now: "the model handles it, except where we've decided."
+- AI answering questions is a future integration idea, not a current runtime capability. Park rules cannot make network or model calls. An external application could propose model outputs for people to review; the runtime would continue to use explicit examples and deterministic code. Demand for that workflow still needs validation.
 
 ## Who has the problem today:
 

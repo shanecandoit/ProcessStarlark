@@ -81,6 +81,21 @@ func build() error {
 			return err
 		}
 	}
+	// The introduction is a separate, buildless presentation; keep it available
+	// beside the full playground on GitHub Pages and local static servers.
+	storyDir := filepath.Join(dist, "story")
+	if err := os.MkdirAll(storyDir, 0755); err != nil {
+		return err
+	}
+	for _, name := range []string{"index.html", "style.css", "story.js"} {
+		b, err := os.ReadFile(filepath.Join("web", "story", "dist", name))
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(storyDir, name), b, 0644); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

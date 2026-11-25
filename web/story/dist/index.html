@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Park makes known business answers executable. People supply examples, developers write rules, and missing facts become questions. Try a short interactive walkthrough.">
+  <meta name="theme-color" content="#101f26">
+  <title>Park - Examples that run</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="story.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#intro">Skip to the story</a>
+  <header class="masthead">
+    <a class="wordmark" href="#intro" aria-label="Park introduction">park<span class="mark" aria-hidden="true">*</span></a>
+    <span class="edition">An early product. An open invitation.</span>
+    <a class="top-link" href="https://shanecandoit.github.io/ProcessStarlark/#tour=shipping">Try the real playground</a>
+  </header>
+  <main>
+    <section class="slide hero" id="intro" aria-labelledby="intro-title" data-title="The idea">
+      <div class="hero-copy">
+        <p class="eyebrow">For the people who know the rules.<br>And the people who build them.</p>
+        <h1 id="intro-title">Your answers.<br><em>Already running.</em></h1>
+        <p class="lead">Write down the answers you know. Code fills in the rest. Anything else, Park asks about.</p>
+        <div class="actions"><a class="button primary" href="#try">See it happen</a><a class="text-link" href="#builders">I build software</a></div>
+      </div>
+      <div class="hero-diagram" aria-label="A known answer, a general rule, and a missing fact become one working system">
+        <div class="paper fact"><span class="tag">A person knows</span><strong>France is in the<br>international zone.</strong><span class="annotation">This answer already works.</span></div>
+        <div class="paper rule"><span class="tag">A developer writes</span><strong>Shipping price =<br>base + weight fee</strong><span class="annotation">Code covers the other weights.</span></div>
+        <div class="paper question"><span class="tag">Park asks</span><strong>And Germany?</strong><span class="annotation">A missing fact becomes a question.</span></div>
+      </div>
+      <p class="footnote hero-note">Working CLI · browser playground · local draft and release backend</p>
+    </section>
+
+    <section class="slide" id="problem" aria-labelledby="problem-title" data-title="The problem">
+      <div class="section-heading"><p class="eyebrow">The handoff is the hard part</p><h2 id="problem-title">You know the answer.<br>The software has a ticket.</h2></div>
+      <div class="handoff">
+        <div><span class="tag">Operations</span><blockquote>“Germany belongs in the international zone.”</blockquote><p>A fact someone already knows.</p></div>
+        <div class="handoff-middle"><span>Specification</span><span>Interpretation</span><span>Implementation</span><span>Another change request</span></div>
+        <div><span class="tag">The question</span><blockquote>Why can’t that answer just work?</blockquote><p>Park starts with the known cases, then lets code complete the rule.</p></div>
+      </div>
+      <p class="large-aside">For the awkward middle ground between a mapping spreadsheet and a custom rules service.</p>
+    </section>
+
+    <section class="slide demo-slide" id="try" aria-labelledby="try-title" data-title="Try a missing answer">
+      <div class="section-heading"><p class="eyebrow">A one-minute shipping walkthrough</p><h2 id="try-title">Fill one gap.<br>Answer more questions.</h2><p>Operations owns the country zones. A developer owns the pricing formula. Germany’s zone is missing.</p></div>
+      <div class="demo-grid">
+        <div class="demo-table"><h3>The facts people maintain</h3><table><caption class="sr-only">Known shipping zones</caption><thead><tr><th scope="col">Country</th><th scope="col">Zone</th></tr></thead><tbody><tr><td>United States</td><td>Domestic</td></tr><tr><td>Canada</td><td>North America</td></tr><tr><td>France</td><td>International</td></tr><tr class="missing"><td>Germany</td><td id="germany-zone">Not answered yet</td></tr></tbody></table><p class="footnote">A saved fact answers a matching call directly.</p></div>
+        <div class="demo-console"><div class="request-line"><span class="tag">Original request</span><strong id="request-label">Ship 800 g to Germany</strong></div><div id="demo-output" role="status" aria-live="polite"><span class="result-label">Missing fact</span><h3>Which zone is Germany in?</h3><p>The quote needs a zone before the pricing rule can finish.</p></div><div id="answer-controls"><p class="answer-preview">Your answer: <strong>International</strong></p><button class="button primary" id="save-answer" type="button">Save this fact &amp; get quote</button></div><div id="reuse-controls" hidden><button class="button primary" id="reuse-answer" type="button">Now quote 1,300 g</button><button class="quiet" id="reset-demo" type="button">Reset walkthrough</button></div></div>
+      </div>
+      <div class="demo-caption"><p>Illustrative interaction using the shipping sample’s formula. Answers here last only on this page.</p><a class="text-link" href="https://shanecandoit.github.io/ProcessStarlark/#tour=shipping">Run the actual Park engine</a></div>
+      <noscript><p>The interactive walkthrough needs JavaScript. In the sample, saving Germany as international produces $27.99 for 800 g and $31.99 for 1,300 g. Use the playground link to try Park.</p></noscript>
+    </section>
+
+    <section class="slide principles" id="contract" aria-labelledby="contract-title" data-title="What is different">
+      <div class="section-heading"><p class="eyebrow">The important difference</p><h2 id="contract-title">An example is part<br>of the running system.</h2></div>
+      <div class="principle-list"><article><span class="symbol">=</span><div><h3>Known answers come first.</h3><p>A call matching an authored example returns that answer. It works even before there is code.</p></div></article><article><span class="symbol">+</span><div><h3>Code fills the gaps.</h3><p>A developer writes the general rule. Explicit checks run the implementation against its examples and report disagreements.</p></div></article><article><span class="symbol">?</span><div><h3>Missing facts become questions.</h3><p>If neither an example nor an implementation answers a call, Park records the missing answer. Code errors are reported as errors.</p></div></article></div>
+      <p class="footnote">Two examples make an implemented function “ready” under the current policy. That count alone does not prove correctness; checks are a separate step.</p>
+    </section>
+
+    <section class="slide" id="teams" aria-labelledby="teams-title" data-title="For teams and buyers">
+      <div class="section-heading"><p class="eyebrow">For rule owners and buyers</p><h2 id="teams-title">Keep the people<br>who know involved.</h2><p>Start with a small rule that combines a human-maintained table with a formula.</p></div>
+      <div class="use-cases"><article><span class="use-label">Pricing &amp; fees</span><h3>Which zone?<br>Which rate?</h3><p>People maintain the facts. Code calculates the quote.</p></article><article><span class="use-label">Routing &amp; assignment</span><h3>Which category?<br>Which team?</h3><p>Keep the mapping explicit and surface unanswered cases.</p></article><article><span class="use-label">Plans &amp; entitlements</span><h3>Which plan?<br>Which allowance?</h3><p>Make known inputs and expected answers inspectable together.</p></article></div>
+      <div class="buyer-strip"><h3>What to evaluate in a pilot</h3><p>Can your rule owner answer a missing case? Can a developer check the rule? Can a reviewer understand the change before activation?</p></div>
+      <p class="footnote">These are candidate use cases, not customer deployments. Park evaluates pure rules; applications remain responsible for actions such as payments, emails, and database updates.</p>
+    </section>
+
+    <section class="slide builder-slide" id="builders" aria-labelledby="builders-title" data-title="For developers">
+      <div class="section-heading"><p class="eyebrow">For developers &amp; SaaS builders</p><h2 id="builders-title">A small runtime.<br>A different contract.</h2><p>Go + Starlark, compiled to WebAssembly for the browser. Deterministic functions, explicit examples, and traceable answers.</p></div>
+      <div class="builder-grid"><div class="code-panel"><span class="tag">An example-only function already runs</span><pre><code>Process Zones:
+    example: zone("FR") == "international"
+    example: zone("DE") == "international"
+
+    def zone(country):
+        pass</code></pre><div class="code-result"><code>Zones.zone("DE")</code><strong>"international"</strong><span>Answered by the saved example</span></div></div><div class="builder-notes"><h3>Examples answer.<br>Checks verify.</h3><p>Runtime lookup gives the example precedence. <code>park test</code> bypasses the target function’s own examples and cache to test its implementation.</p><h3>Keep the rule boundary small.</h3><p>No network, files, clock, or randomness inside rules. Supply inputs from your application; inspect results and provenance.</p><a class="text-link" href="https://github.com/shanecandoit/ProcessStarlark/blob/main/docs/why-park.md">Read the technical rationale</a></div></div>
+    </section>
+
+    <section class="slide" id="review" aria-labelledby="review-title" data-title="From draft to live">
+      <div class="section-heading"><p class="eyebrow">The local backend is already here</p><h2 id="review-title">A new answer shouldn’t<br>be an accidental release.</h2></div>
+      <div class="release-flow"><article><span class="tag">Draft</span><h3>Save the change.</h3><p>Edit an isolated copy. Keep source history and reject stale writes.</p></article><article><span class="tag">Review</span><h3>See the impact.</h3><p>Check implementations and compare named scenarios against pinned source and release versions.</p></article><article><span class="tag">Activate</span><h3>Make it live.</h3><p>Approve a whole-project release. Evaluate that release, or roll back to an earlier one.</p></article></div>
+      <div class="scope-note"><strong>Working locally, with SQLite persistence.</strong><p>Reviews use local actor labels. Hosted accounts, tenant permissions, authenticated reviewer roles, and operations are still planned. Comparisons cover the selected scenarios.</p></div>
+      <a class="text-link" href="https://github.com/shanecandoit/ProcessStarlark/blob/main/docs/playground-review-guide.md">Follow the local review walkthrough</a>
+    </section>
+
+    <section class="slide status-slide" id="today" aria-labelledby="today-title" data-title="Where it stands">
+      <div class="section-heading"><p class="eyebrow">Early, working, looking for evidence</p><h2 id="today-title">Enough built to try.<br>Plenty left to learn.</h2></div>
+      <div class="status-columns"><div><span class="tag">Works today</span><ul><li>CLI and no-install browser playground</li><li>Examples, rules, questions, checks, and “why”</li><li>Editable tables and guided tours</li><li>Durable local drafts and source history</li><li>Local review, release, evaluation API, rollback</li></ul></div><div><span class="tag">Next evidence</span><ul><li>Sessions with people unfamiliar with Park</li><li>A real team’s small, representative rule</li><li>Clarity around saved, checked, and live state</li><li>Storage growth and performance measurements</li></ul><p class="footnote">No customer results or scale claims yet. The public playground is browser-only; the backend runs separately.</p></div></div>
+    </section>
+
+    <section class="slide invitation" id="join" aria-labelledby="join-title" data-title="Get involved">
+      <p class="eyebrow">Looking for early users &amp; collaborators</p><h2 id="join-title">Bring a messy rule.<br>Or help build<br><em>a better handoff.</em></h2>
+      <div class="join-grid"><article><h3>Have this problem?</h3><p>Bring a small, anonymized table and the formula around it. Tell us who owns the answers, how changes happen, and what gets missed.</p><a class="button primary" href="https://github.com/shanecandoit/ProcessStarlark/issues/new?title=Potential%20pilot%3A%20my%20rules%20workflow&amp;body=The%20rule%20we%20maintain%3A%0AWho%20knows%20the%20answers%3A%0AHow%20changes%20happen%20today%3A%0AWhat%20gets%20missed%3A%0A%0APlease%20use%20anonymized%20examples%20only.">Describe your workflow</a></article><article><h3>Want to build with us?</h3><p>Help test the rule-owner experience, simplify the UI, measure the runtime, or design the authenticated pilot. Start with the working code and plans.</p><a class="button secondary" href="https://github.com/shanecandoit/ProcessStarlark">Explore the repository</a></article></div>
+      <div class="closing-links"><a href="https://shanecandoit.github.io/ProcessStarlark/#tour=shipping">Try the shipping tour</a><a href="https://github.com/shanecandoit/ProcessStarlark/blob/main/docs/for-business.md">Read the business overview</a><button class="quiet" type="button" id="print-story">Print / save as PDF</button></div>
+      <p class="footnote">The workflow link opens a public GitHub issue composer; nothing is submitted automatically. A GitHub account is required to submit. Contributions and teammate arrangements can be discussed there.</p>
+    </section>
+  </main>
+  <nav class="deck-nav" aria-label="Presentation navigation"><button type="button" id="previous" aria-label="Previous section">Previous</button><a href="#intro" id="section-label" aria-label="Current section">The idea</a><span id="section-count" aria-live="polite">1 / 9</span><button type="button" id="next" aria-label="Next section">Next</button></nav>
+</body>
+</html>

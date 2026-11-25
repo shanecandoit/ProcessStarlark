@@ -141,7 +141,7 @@ token as source edits.
 You need a repository checkout, Go 1.26 or newer, and Python 3. There are no
 Python package dependencies. Run these commands from the repository root.
 
-**Terminal 1 — start the service:**
+**Terminal 1 - start the service:**
 
 ```sh
 go run ./cmd/park-drafts --root examples/shipping --db .park/shipping.sqlite
@@ -154,7 +154,7 @@ Actor names such as `ops` and `developer` are labels for the walkthrough. The
 default storage is `.park/drafts.sqlite` if `--db` is omitted. Use a distinct
 database per reference project; a different reference is rejected on restart.
 
-**Terminal 2 — follow the checked guide and save a copy:**
+**Terminal 2 - follow the checked guide and save a copy:**
 
 ```sh
 draft_output_dir=$(mktemp -d)

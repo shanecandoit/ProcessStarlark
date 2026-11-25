@@ -92,7 +92,7 @@ def main():
                     raise RuntimeError(f"{step['title']}: {path} expected {wanted!r}, got {actual!r}")
             if expected.get("reference_unchanged") and value["files"] != reference:
                 raise RuntimeError("The reference project changed")
-        print(f"{number:2}. {step['title']} — OK")
+        print(f"{number:2}. {step['title']} - OK")
     if args.workflow == "release":
         print(f"\nDraft: {args.draft_id}. Germany release: {variables['release']}.")
         print("Two releases activated; rollback restored the baseline at generation 3.")

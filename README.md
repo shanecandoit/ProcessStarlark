@@ -22,6 +22,12 @@ shows how one new word meaning unlocks more expressions. The
 [shipping tour](https://shanecandoit.github.io/ProcessStarlark/#tour=shipping)
 shows the handoff between a business user and a developer.
 
+For a short introduction to share or present, the [interactive story](web/story/dist/index.html)
+explains the problem, walks through a missing shipping fact, and gives rule
+owners and developers separate next steps. It includes keyboard navigation and
+a print layout. After building, serve `web/dist/` and open `/story/`;
+the Pages workflow publishes it there on the next deployment.
+
 - **For business teams and buyers:** [Park for business teams](docs/for-business.md)
   walks through a shipping-quote example and compares Park with specs,
   spreadsheets, rules engines, and low-code tools.
@@ -277,3 +283,19 @@ sessions and findings are still pending.
 
 **Status:** early. The command-line tool and the browser playground work end to
 end, and their details may still change.
+
+## Picking this up later, or joining in
+
+The next product milestone is evidence from unfamiliar users. The
+[session protocol](docs/usability-sessions.md) is ready; participant findings
+remain pending. The [near-term plan](docs/plan-saas.md#near-term-plan) separates
+implemented local workflows from usability, retention/performance, and hosted
+access work.
+
+For a concrete starting point, run the [shipping walkthrough](docs/playground-review-guide.md).
+For implementation, use the [reference](docs/reference.md),
+[decisions](docs/design.md), and build/check commands above. Rule-owner UX,
+runtime/storage measurement, and an authenticated pilot are useful areas for
+collaboration. Discuss the scope in a repository issue before taking on a large
+change. Accounts and tenant permissions remain planned; local actor names do
+not establish identity.

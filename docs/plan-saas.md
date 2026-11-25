@@ -238,7 +238,7 @@ priority is complete.
 | Priority | Work | Completion criterion |
 |---|---|---|
 | 1 | **Playground review/release workflow** | Save, inspect changes/checks, approve or reject, evaluate live, and roll back through the UI; stale reviews are clearly explained. |
-| 2 | **Behavior comparison report — new proposal** | Run named scenarios against an active release and a pinned draft; show changed answers, newly answered calls, unresolved calls, and errors. |
+| 2 | **Behavior comparison report - new proposal** | Run named scenarios against an active release and a pinned draft; show changed answers, newly answered calls, unresolved calls, and errors. |
 | 3 | **Question-flow polish and usability sessions** | Users can resolve several missing answers and understand which saved facts the rules reused. |
 | 4 | **Retention and measured performance** | Inspect storage/cache growth, define retention rules, and benchmark representative workloads before adding more caching. |
 
