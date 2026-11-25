@@ -10,6 +10,11 @@ export default [
     languageOptions: { sourceType: "script", globals: globals.browser },
   },
   {
+    // The shareable story is hand-written and committed, not generated.
+    files: ["web/story/**/*.js"],
+    languageOptions: { sourceType: "script", globals: globals.browser },
+  },
+  {
     files: ["web/app.js"],
     languageOptions: { globals: { CodeMirror: "readonly" } },
   },
